@@ -146,7 +146,15 @@ Runs the tree's **SQL export inside the database** on the **full table** and com
 - The **SQL** that was run.
 
 **Notes**
-- **Needs a SQL dataset.** It requires a dataset stored in a SQL database (e.g. a Snowflake or PostgreSQL table). Other datasets get a clear message; nothing else changes.
+- **Needs a SQL dataset.** It requires a dataset stored in a SQL database. Other datasets get a clear message; nothing else changes.
+- **SQL dialect.** The dialect is chosen from the dataset's connection type:
+  - **Standard SQL** (double-quoted names): Snowflake, PostgreSQL, Redshift, Oracle, DuckDB…
+  - **BigQuery**: backtick names, `CAST(… AS STRING)`, `\'` in text.
+  - **MySQL**: backtick names.
+  - SQL Server / Synapse are not supported yet.
+
+  Category values of numeric columns are written as numbers, because BigQuery does not cast types implicitly.
+- **Errors.** A database error is shown as a one-line summary, with the full text on demand.
 - **Leaf event rates.** When leaf formulas use `leaf_event_rate` and the rates are not frozen, the live rates from the loaded rows are embedded in the SQL. Freeze them first for a clean comparison.
 - **Validation.** With all rows in memory, the in-database KPIs equal the in-memory KPIs exactly. With a sample, the database figures equal a full in-memory evaluation of the whole table. Both are checked by `tests/dbbt_test.py` (SQLite as the SQL engine).
 

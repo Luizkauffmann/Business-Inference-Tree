@@ -1366,12 +1366,24 @@ def _calibrate(t, x, mask, exp_left):
 # ════════════════════════════════════════════════════════════════════
 
 def _q(c):
-    return '"' + str(c).replace('"', '""') + '"'
+    return tx._q(c)
 
 
 def _sql_lit(v):
     f = _num(v)
-    return repr(f) if f is not None and not isinstance(v, str) else "'" + str(v).replace("'", "''") + "'"
+    return repr(f) if f is not None and not isinstance(v, str) else tx.sql_str(v)
+
+
+_NUMERIC_COLS = [frozenset()]   # numeric columns known to the caller (typed literals for strict SQL engines)
+
+
+def _cat_lit(var, x):
+    """Category value as a SQL literal: a number for numeric columns (BigQuery does not cast), else text."""
+    if var in _NUMERIC_COLS[0]:
+        f = _num(x)
+        if f is not None:
+            return repr(float(f))
+    return _sql_lit(x)
 
 
 def _branch_sql(split, i, subst):
@@ -1395,11 +1407,11 @@ def _branch_sql(split, i, subst):
     else:
         groups = split["groups"]
         if i < len(groups):
-            cond = f"{v} IN ({', '.join(_sql_lit(x) for x in groups[i])})"
+            cond = f"{v} IN ({', '.join(_cat_lit(split['variable'], x) for x in groups[i])})"
         else:
             cond = None
         listed = [x for g in groups for x in g]
-        not_listed = f"{v} NOT IN ({', '.join(_sql_lit(x) for x in listed)})"
+        not_listed = f"{v} NOT IN ({', '.join(_cat_lit(split['variable'], x) for x in listed)})"
         other = len(groups) if split.get("other_separate") else int(split.get("other_branch") or 0)
         if i == other:
             cond = f"({cond} OR {not_listed})" if cond else not_listed
@@ -1425,7 +1437,16 @@ def _rates_note(tree, leaf_rates, rates_source, comment):
             f"{rates_source or 'no leaf rates (NULL) – freeze the leaf rates first'}\n")
 
 
-def to_sql(tree, meta, table="input_table", leaf_rates=None, rates_source=None):
+def to_sql(tree, meta, table="input_table", leaf_rates=None, rates_source=None, dialect=None, numeric_columns=None):
+    if dialect:
+        with tx.sql_dialect(dialect):
+            return to_sql(tree, meta, table, leaf_rates, rates_source, numeric_columns=numeric_columns)
+    if numeric_columns is not None:
+        prev, _NUMERIC_COLS[0] = _NUMERIC_COLS[0], frozenset(numeric_columns)
+        try:
+            return to_sql(tree, meta, table, leaf_rates, rates_source)
+        finally:
+            _NUMERIC_COLS[0] = prev
     rates = _export_rates(tree, leaf_rates)
     rows, out_names = [], []
     for lf in leaves(tree):
@@ -1465,7 +1486,7 @@ def to_sql(tree, meta, table="input_table", leaf_rates=None, rates_source=None):
             if o["name"] not in out_names:
                 out_names.append(o["name"])
             if mode == "output" and o["name"] == L.get("decision_output"):
-                dec = f"COALESCE(UPPER(TRIM(CAST(({outs[o['name']]}) AS VARCHAR))), 'REFER')"
+                dec = f"COALESCE(UPPER(TRIM(CAST(({outs[o['name']]}) AS {tx.dialect()['string']}))), 'REFER')"
                 subst["leaf_decision"] = dec
         limit = tx.to_sql(L["limit_expr"], subst) if L.get("limit_expr") else "1.0"
         rows.append((" AND ".join(conds) or "1=1", lf, score, dec, limit, outs))
@@ -1578,10 +1599,13 @@ def to_python(tree, meta, leaf_rates=None, rates_source=None):
     return "\n".join(lines) + "\n"
 
 
-def backtest_sql(tree, meta, table, target=None, leaf_rates=None, rates_source=None):
+def backtest_sql(tree, meta, table, target=None, leaf_rates=None, rates_source=None, dialect=None, numeric_columns=None):
     """In-database backtest: the exported SQL of the tree, aggregated per leaf and decision.
-    Runs in the warehouse (Snowflake, PostgreSQL...) on the full table; only the summary comes back."""
-    inner = to_sql(tree, meta, table=table, leaf_rates=leaf_rates, rates_source=rates_source)
+    Runs in the warehouse (Snowflake, BigQuery, PostgreSQL...) on the full table; only the summary comes back."""
+    if dialect:
+        with tx.sql_dialect(dialect):
+            return backtest_sql(tree, meta, table, target, leaf_rates, rates_source, numeric_columns=numeric_columns)
+    inner = to_sql(tree, meta, table=table, leaf_rates=leaf_rates, rates_source=rates_source, numeric_columns=numeric_columns)
     t = _q(target) if target else None
     known = f"SUM(CASE WHEN {t} IN (0, 1) THEN 1 ELSE 0 END)" if t else "0"
     events = f"SUM(CASE WHEN {t} = 1 THEN 1 ELSE 0 END)" if t else "0"

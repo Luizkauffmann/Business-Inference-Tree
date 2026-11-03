@@ -524,6 +524,22 @@ def register(app):
         except Exception as e:
             return fail(e)
 
+    def _sql_dialect_of(name, table):
+        """'ansi' | 'bigquery' | 'mysql' | None (not supported) from the dataset's connection type."""
+        try:
+            t = (dataiku.api_client().get_default_project().get_dataset(name).get_settings().get_raw().get("type") or "").lower()
+        except Exception:
+            t = ""
+        if "bigquery" in t:
+            return "bigquery"
+        if t in ("mysql", "mariadb"):
+            return "mysql"
+        if t in ("sqlserver", "synapse", "azuresql", "fabricwarehouse") or table.startswith("["):
+            return None
+        if table.startswith("`"):
+            return "bigquery"
+        return "ansi"
+
     @app.route("/api/backtest_db", methods=["POST"])
     def api_backtest_db():
         """Runs the tree's SQL export inside the database on the full table (only aggregates come back)
@@ -543,6 +559,10 @@ def register(app):
                 if loc.get("locationInfoType") != "SQL" or not table:
                     return fail(f"In-database backtest needs a dataset stored in a SQL database (Snowflake, PostgreSQL…); "
                                 f"'{c['dataset']}' is not. Use the in-memory KPIs instead.", 400)
+                dialect = _sql_dialect_of(c["dataset"], table)
+                if dialect is None:
+                    return fail("In-database backtest does not support SQL Server / Synapse yet; "
+                                "use the in-memory KPIs or a Snowflake / BigQuery / PostgreSQL copy.", 400)
                 errors = [i for i in st.validate(tree, s["df"].columns, c.get("score_col")) if i["level"] == "error"]
                 if errors:
                     return fail("Fix the tree first: " + errors[0]["message"], 400)
@@ -552,7 +572,9 @@ def register(app):
                     rates, _, src, _ = st.rate_table(tree, masks, s["y"], c["dataset"])
                 res, _ = st.predict(res, tree, masks, s["y"], c["dataset"])
                 sql = st.backtest_sql(tree, dict(name=(b.get("meta") or {}).get("name"), score_col=c.get("score_col")),
-                                      table, c.get("target"), rates, src)
+                                      table, c.get("target"), rates, src, dialect=dialect,
+                                      numeric_columns=[k for k in s["df"].columns if pd.api.types.is_numeric_dtype(s["df"][k])
+                                                       and not pd.api.types.is_bool_dtype(s["df"][k])])
                 t0 = time.time()
                 db = dataiku.SQLExecutor2(dataset=ds).query_to_df(sql)
                 secs = time.time() - t0
@@ -561,7 +583,7 @@ def register(app):
                           mem=st.backtest_summary(mem, c.get("margin"), c.get("loss")),
                           leaves=st.backtest_leaves(mem, db), sql=sql, seconds=secs, table=table,
                           sample_rows=c.get("sample_rows"), rows_in_memory=len(s["df"]),
-                          rates_note=src)
+                          rates_note=src, dialect=dialect)
         except (st.TreeError, tx.ExprError) as e:
             return fail(e, 400)
         except Exception as e:

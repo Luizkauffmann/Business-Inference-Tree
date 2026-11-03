@@ -64,11 +64,22 @@ with sync_playwright() as p:
     appr = (res["tree_decision"] == "APPROVE").mean()
     check(f"{100 * appr:.1f}%" in body, f"database approval = full-table approval computed in memory ({100 * appr:.1f}%)")
     pg.screenshot(path=OUT + "/tb_11_db_backtest.png"); pg.click(".tb #btnDbClose")
-    # 3) non-SQL dataset: clear message, nothing breaks
+    # 3) a long database error (like a BigQuery type error) is summarised, full text on demand
+    orig = dataiku.SQLExecutor2.query_to_df
+    dataiku.SQLExecutor2.query_to_df = lambda s, q: (_ for _ in ()).throw(Exception(
+        "Exception: Query failed: " + q[:2000] + ", caused by: SQLException: No matching signature for operator < for argument types: STRING, FLOAT64. "
+        "Signature: T1 < T1 Unable to find common supertype at [6:38]" + "\\n  at com.example.Driver" * 30))
+    pg.click(".tb #btnDbBt"); pg.wait_for_selector(".tb #dbModal:not([hidden])", timeout=60000); time.sleep(0.3)
+    eb = pg.inner_text(".tb #dbBody"); vis = pg.inner_text(".tb .db-err")
+    check("rejected the query" in eb and vis.count("\n") < 4 and "No matching signature" in vis and len(vis) < 400,
+          "long database error summarised: " + vis.replace("\n", " ")[:120])
+    pg.screenshot(path=OUT + "/tb_12_db_error.png"); pg.click(".tb #btnDbClose")
+    dataiku.SQLExecutor2.query_to_df = orig
+    # 4) non-SQL dataset: clear message, nothing breaks
     dataiku.SQL_TABLES.discard("applications_demo_enriched")
     pg.click(".tb #btnDbBt"); time.sleep(1.5)
     check("SQL database" in pg.inner_text(".tb #toast"), "non-SQL dataset: " + pg.inner_text(".tb #toast")[:90])
     b.close()
-real = [e for e in errs if "favicon" not in e and "400" not in e]
+real = [e for e in errs if "favicon" not in e and "400" not in e and "500" not in e]   # 400 / 500 are the tested error cases
 check(not real, "no JS errors" + ("" if not real else ": " + str(real[:3])))
 srv.shutdown()

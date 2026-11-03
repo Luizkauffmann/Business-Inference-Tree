@@ -858,7 +858,7 @@
       var pts = function (x) { return (x > 0 ? '+' : '') + (100 * x).toFixed(2) + ' pts'; };
       var p2 = function (x) { return pct(x, 2); };
       var memLabel = r.sample_rows ? 'In memory (random sample, ' + num(r.rows_in_memory) + ' rows)' : 'In memory (all ' + num(r.rows_in_memory) + ' rows)';
-      $('#dbBody').innerHTML = '<div class="hint">Table <code>' + esc(r.table) + '</code> · query ' + r.seconds.toFixed(1) + ' s' +
+      $('#dbBody').innerHTML = '<div class="hint">Table <code>' + esc(r.table) + '</code> · ' + esc(r.dialect === 'ansi' ? 'standard SQL' : r.dialect) + ' · query ' + r.seconds.toFixed(1) + ' s' +
         (r.rates_note ? ' · leaf event rates in formulas: ' + esc(r.rates_note) : '') + '</div>' +
         '<table class="tbl"><tr><th>KPI</th><th class="n">' + memLabel + '</th><th class="n">In database (full table)</th><th class="n">Difference</th></tr>' +
         line('Rows', m.n, d.n, num, function (x) { return (x > 0 ? '+' : '') + num(x); }) +
@@ -881,7 +881,17 @@
         }).join('') + '</table>' +
         '<details style="margin-top:10px"><summary class="hint">SQL run in the database</summary><pre class="sqlbox">' + esc(r.sql) + '</pre></details>';
       $('#dbModal').hidden = false;
-    } catch (e) { toast(e.message, true); }
+    } catch (e) {
+      // database errors can be very long (full SQL + driver stack): short summary, details on demand
+      var msg = String(e.message || e), first = msg.split(/\n|, caused by:|\\n/)[0];
+      if (/^(In-database backtest|Fix the tree first|Load a population)/.test(msg)) { toast(msg, true); return; }
+      var m = /(No matching signature[^\\\n]*|Unrecognized name[^\\\n]*|SQL compilation error[^\\\n]*|syntax error[^\\\n]*)/i.exec(msg);
+      var short = (m ? m[1] : first).slice(0, 300);
+      $('#dbBody').innerHTML = '<div class="db-err"><b>The database rejected the query.</b><br>' + esc(short) + '</div>' +
+        '<details style="margin-top:8px"><summary class="hint">Full error</summary><pre class="sqlbox">' + esc(msg) + '</pre></details>';
+      $('#dbModal').hidden = false;
+      toast('Backtest in database failed – see the details.', true);
+    }
     finally { busy(btn, false); btn.textContent = 'Backtest in database'; }
   }
 

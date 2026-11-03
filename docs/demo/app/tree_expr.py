@@ -301,8 +301,42 @@ def _call(fn, args, env, idx):
 # translation (exporters)
 # ════════════════════════════════════════════════════════════════════
 
+# SQL dialects for the exporters / in-database backtest. "ansi" (double-quoted identifiers) covers
+# Snowflake, PostgreSQL, Redshift, Oracle, DuckDB, SQLite...; BigQuery and MySQL quote with backticks.
+SQL_DIALECTS = {
+    "ansi": {"quote": '"', "string": "VARCHAR", "lit_esc": "''"},
+    "bigquery": {"quote": "`", "string": "STRING", "lit_esc": "\\'"},
+    "mysql": {"quote": "`", "string": "CHAR", "lit_esc": "''"},
+}
+_DIALECT = ["ansi"]
+
+
+class sql_dialect(object):
+    """with sql_dialect("bigquery"): ... – SQL generated inside uses that dialect."""
+
+    def __init__(self, name):
+        self.name = name if name in SQL_DIALECTS else "ansi"
+
+    def __enter__(self):
+        self.prev = _DIALECT[0]
+        _DIALECT[0] = self.name
+        return self
+
+    def __exit__(self, *exc):
+        _DIALECT[0] = self.prev
+
+
+def dialect():
+    return SQL_DIALECTS[_DIALECT[0]]
+
+
 def _q(c):
-    return '"' + str(c).replace('"', '""') + '"'
+    qc = dialect()["quote"]
+    return qc + str(c).replace(qc, qc + qc) + qc
+
+
+def sql_str(v):
+    return "'" + str(v).replace("'", dialect()["lit_esc"]) + "'"
 
 
 def to_sql(expr, subst=None):
@@ -316,7 +350,7 @@ def to_sql(expr, subst=None):
             return "TRUE" if v else "FALSE"
         if isinstance(v, (int, float)):
             return repr(v)
-        return "'" + str(v).replace("'", "''") + "'"
+        return sql_str(v)
 
     def ref(name):
         return f"({subst[name]})" if name in subst else _q(name)
