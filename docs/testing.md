@@ -23,6 +23,9 @@ It uses `uv` by default. To use another interpreter, set `PY="python"` with the 
 | `wiki_examples.py` | The [Logic tab worked example](logic-and-formulas.md) validates, evaluates and exports identically to SQL and Python |
 | `outputs_test.py` | Multiple outputs per leaf: default outputs, leaf values, decision from an output, segment-only leaves. App, SQL and Python agree on every column, with live and frozen leaf rates. |
 | `decout_ui_test.py` (browser) | *Decision = from an output…* on a leaf without outputs: a starter `credit_decision` output is added and selected; Apply logic links them; card chip; leaf decisions equal the output; no duplicate when switching modes |
+| `labels_test.py` | Labels: inheritance and overrides, `label_<name>` columns and use in formulas; SQL / Python exports; *Send to Studio*; Strategy Studio evaluation, SQL / Python, InterConnect and PowerCurve round trips, engine examples and DMN |
+| `labels_ui_test.py` (browser) | Labels box, label types dialog (add, rename), card badges (own vs inherited), decisions dataset, SQL export, *Send to Studio* |
+| `labels_examples.py` | Builds the four trees of the [labels article](labels.md); validation, identical SQL results and Strategy Studio labels |
 | `studio_conv.py` | *Send to Studio* conversion gives identical decisions under Strategy Studio's semantics (missing branches, other categories) |
 | `ui_test.py` (browser) | Load, relevance %, optimal split, debounced search, Binning v2 config, formulas, custom metrics, save, Send to Studio, write dataset, Visual ML import, 1,500-attribute virtualised list |
 | `bins_test.py` (browser) | Bin table, multi-select merge (adjacent rule), split bin, edit boundary (valid range), missing routing, undo, full table, editing an existing split while keeping sub-trees, categorical merge / move, rule merge |

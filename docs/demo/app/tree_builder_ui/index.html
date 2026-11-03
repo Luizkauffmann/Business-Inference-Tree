@@ -130,7 +130,12 @@
     </div>
 
     <div class="tab" id="tab-logic" hidden>
-      <h3>Calculations <span class="hint">evaluated for rows reaching this node; usable below it</span></h3>
+      <div id="labelBox">
+        <div class="row-between"><h3>Labels <span class="hint">classify this node – applies to everything below it unless a deeper node is labelled</span></h3>
+          <button id="btnLabelDefs" class="mini" title="Label names and their values">Label types…</button></div>
+        <div id="labelRows"></div>
+      </div>
+      <h3 style="margin-top:12px">Calculations <span class="hint">evaluated for rows reaching this node; usable below it</span></h3>
       <div id="calcList"></div>
       <div class="row"><button id="btnAddCalc">+ Calculation</button></div>
       <div id="leafBox">
@@ -156,7 +161,7 @@
         <div id="lfPd" class="pd-box"></div>
         <h3 style="margin-top:10px">Outputs <span class="hint">one column each (out_&lt;name&gt;), evaluated in order</span></h3>
         <div class="hint out-help">Can use <code>leaf_score</code>, <code>leaf_decision</code>, <code>leaf_event_rate</code>,
-          <code>leaf_event_rate_raw</code>, <code>leaf_n_known</code>, <code>leaf_id</code> and earlier outputs,
+          <code>leaf_event_rate_raw</code>, <code>leaf_n_known</code>, <code>leaf_id</code>, labels as <code>label_&lt;name&gt;</code> and earlier outputs,
           e.g. <code>credit_decision</code> = <code>'APPROVE' if leaf_event_rate &lt; 0.05 else 'DECLINE'</code>.</div>
         <div id="outList"></div>
         <div class="row"><button id="btnAddOut">+ Output</button></div>
@@ -188,6 +193,17 @@
       <div id="customList"></div>
       <div class="row"><button id="btnAddCustom">+ Custom metric</button><span class="hint">Saved with the strategy and remembered in this browser.</span></div>
       <div class="row" style="justify-content:flex-end"><button id="btnMetricsSave" class="primary">Apply</button></div>
+    </div>
+  </div>
+  <div id="labelDefsModal" class="modal" hidden>
+    <div class="modal-box">
+      <div class="row-between"><h3>Label types</h3><button id="btnLdClose">✕</button></div>
+      <p class="hint">Each label type becomes a column <code>label_&lt;name&gt;</code> in the decisions dataset, the SQL / Python exports and
+        Strategy Studio, and formulas can read it as <code>label_&lt;name&gt;</code>. Name: letters, digits or _ (e.g. <code>Rating</code>,
+        <code>Pricing_tier</code>, <code>Segment</code>). Values: comma separated, best first.</p>
+      <div id="ldList"></div>
+      <div class="row"><button id="btnLdAdd">+ Label type</button></div>
+      <div class="row" style="justify-content:flex-end"><button id="btnLdApply" class="primary">Apply</button></div>
     </div>
   </div>
   <div id="dbModal" class="modal" hidden>

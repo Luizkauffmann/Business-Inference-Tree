@@ -68,6 +68,16 @@ def leaves(tree):
     return [n for n, _, _ in walk(tree) if n.get("type") == "leaf"]
 
 
+def label_names(tree):
+    """Label types carried by the leaves (e.g. from Strategy Tree Builder), in first-seen order."""
+    out = []
+    for lf in leaves(tree):
+        for k in (lf.get("labels") or {}):
+            if k not in out:
+                out.append(k)
+    return out
+
+
 def variables_used(tree):
     out = []
     for n, _, _ in walk(tree):
@@ -134,6 +144,8 @@ def describe_action(leaf):
     lm = _num(leaf.get("limit_multiplier"))
     if lm is not None and lm != 1:
         parts.append(f"limit ×{lm:g}")
+    for k, v in (leaf.get("labels") or {}).items():
+        parts.append(f"{k} {v}")
     return " · ".join(parts)
 
 
@@ -261,6 +273,8 @@ def evaluate(df, tree, score_col):
     reasons = np.empty(n, dtype=object)
     tier = np.empty(n, dtype=object)
     limit = np.full(n, np.nan)
+    lnames = label_names(tree)
+    label_cols = {k: np.full(n, None, dtype=object) for k in lnames}
     node_rows = {}
 
     def go(node, mask, trail):
@@ -293,6 +307,8 @@ def evaluate(df, tree, score_col):
             tier[idx] = node.get("pricing_tier") or ""
             lm = _num(node.get("limit_multiplier"))
             limit[idx] = 1.0 if lm is None else lm
+            for k in lnames:
+                label_cols[k][idx] = (node.get("labels") or {}).get(k)
             return
         col = df[node["variable"]]
         yes, miss = _condition_mask(col, node)
@@ -308,6 +324,8 @@ def evaluate(df, tree, score_col):
         "strategy_decision": decision, "reason_codes": reasons, "pricing_tier": tier,
         "limit_multiplier": limit,
     }, index=df.index)
+    for k, v in label_cols.items():
+        out["label_" + k] = v
     return out, node_rows
 
 
@@ -453,6 +471,8 @@ def _ic_actions(leaf):
     lm = _num(leaf.get("limit_multiplier"))
     if lm is not None:
         acts.append({"type": "SET_CREDIT_LIMIT_MULTIPLIER", "value": lm})
+    for k, v in (leaf.get("labels") or {}).items():
+        acts.append({"type": "SET_LABEL", "name": k, "value": v})
     return acts
 
 
@@ -509,7 +529,7 @@ def to_interconnect(tree, meta, column_types=None, backtest_summary=None):
             {"name": "pricingTier", "dataType": "STRING"},
             {"name": "creditLimitMultiplier", "dataType": "NUMBER"},
             {"name": "strategyNodeId", "dataType": "STRING"},
-        ],
+        ] + [{"name": "label_" + k, "dataType": "STRING"} for k in label_names(tree)],
         "decisionFlow": flow,
         "backtest": backtest_summary or {},
         "governance": {"checksum": "sha256:" + checksum, "generatedAt": _now(), "generatedBy": "Dataiku Strategy Studio"},
@@ -525,7 +545,8 @@ def to_fico(tree, meta):
                                "decision": d.get("mode", "cutoff").upper() if d.get("mode") != "cutoff" else
                                {"approveIfScoreAtLeast": _num(d.get("approve_at")), "referIfScoreAtLeast": _num(d.get("refer_at"))},
                                "reasonCodes": n.get("reason_codes") or [], "pricingTier": n.get("pricing_tier") or None,
-                               "limitMultiplier": _num(n.get("limit_multiplier"))}}
+                               "limitMultiplier": _num(n.get("limit_multiplier")),
+                               **({"labels": n["labels"]} if n.get("labels") else {})}}
         cond = describe_condition(n)
         return {"partition": {"variable": n["variable"], "name": n.get("name"),
                               "branches": [{"condition": cond, "missingGoesHere": n.get("missing") == "yes", "node": node(n["yes"])},
@@ -571,6 +592,8 @@ def _pc_assignments(leaf, score_char):
     lm = _num(leaf.get("limit_multiplier"))
     out.append({"output": "CREDIT_LIMIT_MULTIPLIER", "type": "CONSTANT", "value": 1.0 if lm is None else lm})
     out.append({"output": "STRATEGY_NODE_ID", "type": "CONSTANT", "value": leaf["id"]})
+    for k, v in (leaf.get("labels") or {}).items():
+        out.append({"output": "LABEL_" + pc_name(k), "type": "CONSTANT", "value": v, "label": k})
     return out
 
 
@@ -637,7 +660,7 @@ def to_powercurve(tree, meta, column_types=None, backtest_summary=None):
                 {"name": "PRICING_TIER", "dataType": "STRING"},
                 {"name": "CREDIT_LIMIT_MULTIPLIER", "dataType": "NUMERIC"},
                 {"name": "STRATEGY_NODE_ID", "dataType": "STRING"},
-            ],
+            ] + [{"name": "LABEL_" + pc_name(k), "dataType": "STRING", "label": k} for k in label_names(tree)],
         },
         "decisionTree": tree_obj,
         "decisionSetters": setters,
@@ -694,6 +717,8 @@ def _tree_from_powercurve(obj):
                 leaf["pricing_tier"] = a["value"]
             elif o == "CREDIT_LIMIT_MULTIPLIER":
                 leaf["limit_multiplier"] = a["value"]
+            elif o.startswith("LABEL_"):
+                leaf.setdefault("labels", {})[a.get("label") or o[6:].lower()] = a["value"]
         return leaf
 
     return build(obj["decisionTree"]["rootNodeId"])
@@ -752,9 +777,12 @@ def to_sql(tree, meta, table="input_table"):
     adj_case = "  CASE\n" + "\n".join(f"    WHEN {c} THEN {a}" for c, _, a, _ in rows) + "\n  END AS adjusted_score"
     dec_case = "  CASE\n" + "\n".join(f"    WHEN {c} THEN {d}" for c, _, _, d in rows) + "\n  END AS strategy_decision"
     tier_case = "  CASE\n" + "\n".join(f"    WHEN {c} THEN '{lf.get('pricing_tier') or ''}'" for c, lf, _, _ in rows) + "\n  END AS pricing_tier"
+    label_cases = ["  CASE\n" + "\n".join(f"    WHEN {c} THEN " + ("NULL" if (lf.get("labels") or {}).get(k) is None
+                                                                   else "'" + str(lf["labels"][k]).replace("'", "''") + "'") for c, lf, _, _ in rows)
+                   + f"\n  END AS {_q('label_' + k)}" for k in label_names(tree)]
     return (f"-- Strategy {meta.get('name')} v{meta.get('version', 1)} ({meta.get('strategy_id')}) "
             f"generated by Dataiku Strategy Studio\nSELECT\n  t.*,\n"
-            + ",\n".join([leaf_case, adj_case, dec_case, tier_case]) + f"\nFROM {table} t")
+            + ",\n".join([leaf_case, adj_case, dec_case, tier_case] + label_cases) + f"\nFROM {table} t")
 
 
 def to_python(tree, meta):
@@ -802,7 +830,8 @@ def to_python(tree, meta):
             lines.append(f"{p}decision = {d['mode'].upper()!r}")
         lines.append(f"{p}return {{'node': {n['id']!r}, 'decision': decision, 'adjusted_score': adjusted, "
                      f"'reason_codes': {list(n.get('reason_codes') or [])!r}, 'pricing_tier': {n.get('pricing_tier') or ''!r}, "
-                     f"'limit_multiplier': {_num(n.get('limit_multiplier')) if _num(n.get('limit_multiplier')) is not None else 1.0!r}}}")
+                     f"'limit_multiplier': {_num(n.get('limit_multiplier')) if _num(n.get('limit_multiplier')) is not None else 1.0!r}"
+                     + (f", 'labels': {dict(n['labels'])!r}" if n.get("labels") else "") + "}")
 
     rec(tree, 1)
     return "\n".join(lines) + "\n"
@@ -879,6 +908,8 @@ def _tree_from_interconnect(obj):
                 leaf["pricing_tier"] = a["tier"]
             elif a["type"] == "SET_CREDIT_LIMIT_MULTIPLIER":
                 leaf["limit_multiplier"] = a["value"]
+            elif a["type"] == "SET_LABEL":
+                leaf.setdefault("labels", {})[a["name"]] = a["value"]
         return leaf
 
     return build(obj["decisionFlow"]["startNode"])

@@ -158,3 +158,13 @@
 .tb .decout .hint { line-height: 1.45; }
 .tb .calc-row.flash input { animation: tbflash 1.6s ease-out 1; }
 @keyframes tbflash { 0% { background: #fff3c4; } 100% { background: #fff; } }
+/* labels */
+.tb #labelBox { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fbfcfd; margin-bottom: 4px; }
+.tb #labelBox h3 { margin: 0 0 6px; }
+.tb .lab-row { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 6px; margin-bottom: 4px; }
+.tb .lab-row .lab-name { font-weight: 700; font-size: 12px; }
+.tb .lab-row select { margin: 0; }
+.tb .ld-row { display: grid; grid-template-columns: 130px 1fr 26px; gap: 4px; margin-bottom: 4px; }
+.tb .ld-row button { padding: 2px; }
+.tb g.lblb text { font-size: 10px; font-weight: 700; }
+.tb #btnLabelDefs { white-space: nowrap; flex-shrink: 0; }

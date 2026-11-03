@@ -86,7 +86,8 @@
       id: nextId(), type: 'leaf', name: name,
       score_adjust: b ? b.score_adjust : { type: 'none', value: 0 },
       decision: b ? b.decision : { mode: 'cutoff', approve_at: +$('#baseline').value || null, refer_at: null },
-      reason_codes: b ? b.reason_codes : [], pricing_tier: b ? b.pricing_tier : '', limit_multiplier: b ? b.limit_multiplier : 1
+      reason_codes: b ? b.reason_codes : [], pricing_tier: b ? b.pricing_tier : '', limit_multiplier: b ? b.limit_multiplier : 1,
+      labels: b && b.labels ? b.labels : undefined
     };
   }
   function condText(n) {
@@ -105,6 +106,7 @@
     else p.push(d.mode.toUpperCase());
     if (l.pricing_tier) p.push('tier ' + l.pricing_tier);
     if (l.limit_multiplier != null && +l.limit_multiplier !== 1) p.push('limit ×' + l.limit_multiplier);
+    Object.keys(l.labels || {}).forEach(function (k) { p.push(k + ' ' + l.labels[k]); });
     return p.join(' · ');
   }
   function clip(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
@@ -231,7 +233,10 @@
         (f.parent ? '<button data-act="delete" class="danger">Delete branch</button>' : '') + '</div>';
     } else {
       var a = n.score_adjust || { type: 'none' }, d = n.decision || { mode: 'cutoff' };
+      var labs = Object.keys(n.labels || {});
       h = '<div class="ed-title"><span class="kind leaf">OUTCOME</span><b>' + esc(n.id) + '</b></div>' + statsLine(n.id, true) +
+        (labs.length ? '<div class="ed-stats">Labels (from Strategy Tree Builder, written as <code>label_&lt;name&gt;</code>): ' +
+          labs.map(function (k) { return '<b>' + esc(k) + '</b> ' + esc(n.labels[k]); }).join(' · ') + '</div>' : '') +
         '<div class="ed-grid">' +
         field('Outcome name', inp('name', n.name), true) +
         field('Score adjustment', sel('adj_type', ['none', 'pct', 'points', 'set'], a.type, ['None', '% of score', 'Points', 'Set score to'])) +

@@ -121,6 +121,12 @@ Saved document (`strategies/<NAME>.json`): `{meta: {name, strategy_id, status, v
 - Evaluation order: score → decision → leaf outputs → default outputs → limit.
 - When a formula reads the leaf rates, `evaluate_full()` runs two passes. Routing does not depend on leaf formulas, so both passes see the same leaves.
 
+**Labels**:
+- the tree root carries `label_defs: [{name, values}]`;
+- any node may carry `labels: {name: value}`;
+- `resolve_labels()` applies inheritance (the deepest node wins) and gives each row `label_<name>`;
+- Strategy Studio leaves carry the resolved `labels: {name: value}`.
+
 **Tree root options**
 - `default_outputs`: `[{name, expr}]`, evaluated in every leaf after its own outputs; a leaf output with the same name overrides.
 - `pd_settings`: `{credibility, threshold, holdout_pct, seed}`.

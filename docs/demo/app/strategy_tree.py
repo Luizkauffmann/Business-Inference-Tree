@@ -166,6 +166,41 @@ def describe_split(split):
     return f"{split['variable']} → {n_branches(split)} branches"
 
 
+# ── labels: a classification assigned by clicking nodes (risk rating, pricing tier, segment...) ──
+# tree["label_defs"] = [{"name": "Rating", "values": ["AAA", "AA", ...]}]; node["labels"] = {"Rating": "AA"}.
+# A node's label applies to every row below it unless a deeper node sets its own; each label type
+# becomes a column label_<name> and can be read in leaf formulas as label_<name>.
+LABEL_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+DEFAULT_LABEL_DEFS = [{"name": "Rating", "values": ["AAA", "AA", "A", "BBB", "BB", "B"]}]
+
+
+def resolve_labels(tree):
+    """{node_id: {label: (value, source node id)}} after inheritance."""
+    out = {}
+
+    def go(n, inherited):
+        cur = dict(inherited)
+        for k, v in (n.get("labels") or {}).items():
+            if v not in (None, ""):
+                cur[k] = (str(v), n["id"])
+        out[n["id"]] = cur
+        for c in n.get("children") or []:
+            go(c, cur)
+
+    go(tree, {})
+    return out
+
+
+def label_names(tree):
+    """Label types in use: the defined ones first, then any other name set on a node."""
+    names = [d["name"] for d in tree.get("label_defs") or [] if d.get("name")]
+    for n, _, _ in walk(tree):
+        for k, v in (n.get("labels") or {}).items():
+            if v not in (None, "") and k not in names:
+                names.append(k)
+    return names
+
+
 def leaf_outputs(tree, leaf):
     """Outputs of a leaf, in evaluation order: the leaf's own outputs first, then the root's
     default outputs it does not override (so defaults such as pricing can read the leaf's decision)."""
@@ -219,10 +254,19 @@ def validate(tree, columns, default_score=None):
         except tx.ExprError as e:
             add(n, "error", f"{what}: {e}")
 
+    defs = {d.get("name"): set(map(str, d.get("values") or [])) for d in tree.get("label_defs") or []}
+    for d in tree.get("label_defs") or []:
+        if not LABEL_NAME_RE.match(d.get("name") or ""):
+            add(tree, "error", f"Label name '{d.get('name')}' must be letters, digits or _ (e.g. Rating, Pricing_tier).")
+    label_vars = {"label_" + k for k in label_names(tree)}
+
     def rec(n, known):
         if n.get("id") in ids:
             add(n, "error", f"Duplicate node id {n.get('id')}.")
         ids.add(n.get("id"))
+        for k, v in (n.get("labels") or {}).items():
+            if v not in (None, "") and defs.get(k) and str(v) not in defs[k]:
+                add(n, "warning", f"Label {k} = '{v}' is not in the list of values of {k}.")
         known = set(known)
         for c in n.get("calcs") or []:
             if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", c.get("name") or ""):
@@ -272,7 +316,7 @@ def validate(tree, columns, default_score=None):
             mode = lf.get("mode", "cutoff")
             if mode not in LEAF_MODES:
                 add(n, "error", f"Unknown leaf decision '{mode}'.")
-            score_known = known | {"leaf_id"} | set(LEAF_RATE_NAMES)
+            score_known = known | {"leaf_id"} | set(LEAF_RATE_NAMES) | label_vars
             if lf.get("score_expr"):
                 check_expr(n, lf["score_expr"], score_known, "Score")
             if mode == "cutoff":
@@ -374,6 +418,9 @@ def evaluate(df, tree, default_score=None, leaf_rates=None):
     limit = np.full(n, np.nan)
     outputs = {}
     masks = {}
+    resolved = resolve_labels(tree)
+    lnames = label_names(tree)
+    label_cols = {k: np.full(n, None, dtype=object) for k in lnames}
 
     def go(node, mask, trail):
         masks[node["id"]] = mask
@@ -400,6 +447,10 @@ def evaluate(df, tree, default_score=None, leaf_rates=None):
         const = lambda v: pd.Series(np.nan if v is None else v, index=idx, dtype=float)
         ctx = env.ctx
         ctx.clear()
+        for k in lnames:
+            v = (resolved.get(node["id"], {}).get(k) or (None,))[0]
+            label_cols[k][ii] = v
+            ctx["label_" + k] = pd.Series(v, index=idx, dtype=object)
         ctx.update(leaf_id=pd.Series(node["id"], index=idx, dtype=object), leaf_event_rate=const(rt.get("pd")),
                    leaf_event_rate_raw=const(rt.get("raw")), leaf_n_known=const(rt.get("n_known")))
         expr = lf.get("score_expr") or default_score
@@ -448,6 +499,8 @@ def evaluate(df, tree, default_score=None, leaf_rates=None):
     go(tree, np.ones(n, dtype=bool), [])
     res = pd.DataFrame({"tree_leaf": leaf_id, "tree_path": path, "tree_score": score, "tree_decision": decision,
                         "reason_codes": reasons, "pricing_tier": tier, "limit_multiplier": limit}, index=idx)
+    for k, v in label_cols.items():
+        res["label_" + k] = v
     for k, v in outputs.items():
         res["out_" + k] = v
     for k, v in env.calcs.items():
@@ -1449,6 +1502,7 @@ def to_sql(tree, meta, table="input_table", leaf_rates=None, rates_source=None, 
             _NUMERIC_COLS[0] = prev
     rates = _export_rates(tree, leaf_rates)
     rows, out_names = [], []
+    resolved, lnames = resolve_labels(tree), label_names(tree)
     for lf in leaves(tree):
         path = next(p for n, _, p in walk(tree) if n is lf)
         subst, conds = {}, []
@@ -1462,6 +1516,9 @@ def to_sql(tree, meta, table="input_table", leaf_rates=None, rates_source=None, 
         mode = L.get("mode", "cutoff")
         rt = rates.get(lf["id"]) or {}
         lit = lambda v: "NULL" if v is None else repr(float(v))
+        for k in lnames:
+            v = (resolved[lf["id"]].get(k) or (None,))[0]
+            subst["label_" + k] = "NULL" if v is None else _sql_lit(str(v))
         subst.update(leaf_id=_sql_lit(lf["id"]), leaf_event_rate=lit(rt.get("pd")),
                      leaf_event_rate_raw=lit(rt.get("raw")), leaf_n_known=lit(rt.get("n_known")))
         expr = L.get("score_expr") or meta.get("score_col")
@@ -1500,6 +1557,9 @@ def to_sql(tree, meta, table="input_table", leaf_rates=None, rates_source=None, 
             case("reason_codes", lambda lf, s, d, l, o: _sql_lit(";".join(lf["leaf"].get("reason_codes") or []))),
             case("pricing_tier", lambda lf, s, d, l, o: _sql_lit(lf["leaf"].get("pricing_tier") or "")),
             case("limit_multiplier", lambda lf, s, d, l, o: l)]
+    for k in lnames:
+        cols.append(case(_q("label_" + k), lambda lf, s, d, l, o, k=k: "NULL" if (resolved[lf["id"]].get(k) or (None,))[0] is None
+                         else _sql_lit(str(resolved[lf["id"]][k][0]))))
     for nm in out_names:
         cols.append(case(_q("out_" + nm), lambda lf, s, d, l, o, nm=nm: o.get(nm, "NULL")))
     note = _rates_note(tree, leaf_rates, rates_source, "--")
@@ -1517,6 +1577,7 @@ def to_sql(tree, meta, table="input_table", leaf_rates=None, rates_source=None, 
 
 def to_python(tree, meta, leaf_rates=None, rates_source=None):
     rates = _export_rates(tree, leaf_rates)
+    resolved, lnames = resolve_labels(tree), label_names(tree)
     lines = [f"# Strategy tree {meta.get('name')} v{meta.get('version', 1)} – Dataiku Strategy Tree Builder",
              tx.PY_HELPERS, "",
              "def _dec(v):\n    return 'REFER' if _m(v) else str(v).strip().upper()", "",
@@ -1542,6 +1603,9 @@ def to_python(tree, meta, leaf_rates=None, rates_source=None):
             mode = L.get("mode", "cutoff")
             rt = rates.get(n["id"]) or {}
             lit = lambda v: "None" if v is None else repr(float(v))
+            labs = {k: (resolved[n["id"]].get(k) or (None,))[0] for k in lnames}
+            for k, v in labs.items():
+                subst["label_" + k] = repr(v)
             subst.update(leaf_id=repr(n["id"]), leaf_event_rate=lit(rt.get("pd")),
                          leaf_event_rate_raw=lit(rt.get("raw")), leaf_n_known=lit(rt.get("n_known")), leaf_score="score")
             expr = L.get("score_expr") or meta.get("score_col")
@@ -1568,7 +1632,7 @@ def to_python(tree, meta, leaf_rates=None, rates_source=None):
             lim = tx.to_python(L["limit_expr"], subst=subst) if L.get("limit_expr") else "1.0"
             lines.append(f"{p}return {{'node': {n['id']!r}, 'decision': decision, 'score': score, "
                          f"'reason_codes': {list(L.get('reason_codes') or [])!r}, 'pricing_tier': {L.get('pricing_tier') or ''!r}, "
-                         f"'limit_multiplier': {lim}, 'outputs': out, 'calc': calc"
+                         f"'limit_multiplier': {lim}, " + (f"'labels': {labs!r}, " if labs else "") + "'outputs': out, 'calc': calc"
                          + ((lambda v: f", 'proba_1': {v!r}, 'prediction': {None if v is None else int(v >= thr)!r}")(
                              (pm["leaves"].get(n["id"]) or {}).get("pd")) if pm else "")
                          + "}")
@@ -1684,8 +1748,10 @@ def to_generic(tree, meta):
 
 
 def to_studio(tree, meta):
-    """Convert to Strategy Studio's binary format (chained splits). Returns (tree, issues)."""
+    """Convert to Strategy Studio's binary format (chained splits). Returns (tree, issues).
+    Labels are resolved per leaf (inheritance applied) and carried as leaf["labels"]."""
     issues = []
+    resolved = resolve_labels(tree)
     ids = [0]
 
     def nid():
@@ -1712,7 +1778,8 @@ def to_studio(tree, meta):
                 "score_adjust": {"type": "none", "value": 0},
                 "decision": {"mode": mode, "approve_at": _num(L.get("approve_at")), "refer_at": _num(L.get("refer_at"))},
                 "reason_codes": list(L.get("reason_codes") or []), "pricing_tier": L.get("pricing_tier") or "",
-                "limit_multiplier": _num(L.get("limit_expr")) if _num(L.get("limit_expr")) is not None else 1.0}
+                "limit_multiplier": _num(L.get("limit_expr")) if _num(L.get("limit_expr")) is not None else 1.0,
+                "labels": {k: v for k, (v, _) in resolved.get(n["id"], {}).items()}}
 
     def conv(n):
         if not n.get("split"):

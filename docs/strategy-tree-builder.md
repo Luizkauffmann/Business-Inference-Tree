@@ -80,6 +80,10 @@ Calculations, leaf decision, score formula, cut-offs, reason codes, pricing tier
 
 Full guide and worked examples: [Logic tab and formula language](logic-and-formulas.md).
 
+## Labels
+
+Select any node → *Logic* → **Labels** and pick a value (e.g. `Rating` = `BBB`). A label applies to everything below the node unless a deeper node sets its own. Cards show solid badges where a label is set and outlined badges where it is inherited. Each label type becomes a `label_<name>` column in the decisions dataset, the exports and Strategy Studio. See [Labels & risk examples](labels.md).
+
 ## Metrics tab and *Node metrics…*
 
 - The **Metrics** tab lists every metric of the selected node.

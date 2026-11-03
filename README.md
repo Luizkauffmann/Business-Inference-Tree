@@ -7,7 +7,7 @@ Two Dataiku webapps for building **credit strategy trees**, the decision trees r
 | Webapp | What it is for |
 | --- | --- |
 | **Strategy Studio** | Hand-built binary strategy trees on a scored population (TRIAD-style).<br>Score adjustments, cut-off decisions, reason codes, pricing tiers and limit multipliers.<br>Live backtest, champion / challenger, exports to decisioning engines (InterConnect, PowerCurve, FICO, Oscilar, Pega, Provenir, Taktile, DMN) and a simulated deployment. |
-| **Strategy Tree Builder** (shown in Dataiku as *Business Inferencing Tree*) | An Angoss / Knowledge Studio-style strategy-tree builder.<br>Relevance-ranked attributes, **optimal multi-way splits** (optbinning) and Binning v2-style **manual bin overrides**.<br>Business logic in nodes: calculations, rule splits, formula leaves, **several outputs per leaf** (decision, pricing, segment) with root defaults. Configurable node metrics and **Visual ML decision-tree import**.<br>Model-like **event-rate prediction** per row with calibration. Scales to 1,500+ attributes, optional sample in memory with **backtest in database** on the full table, and can *Send to Studio*. |
+| **Strategy Tree Builder** (shown in Dataiku as *Business Inferencing Tree*) | An Angoss / Knowledge Studio-style strategy-tree builder.<br>Relevance-ranked attributes, **optimal multi-way splits** (optbinning) and Binning v2-style **manual bin overrides**.<br>Business logic in nodes: calculations, rule splits, formula leaves, **several outputs per leaf** (decision, pricing, segment) with root defaults, and click-to-classify **labels** (risk rating, pricing tier…). Configurable node metrics and **Visual ML decision-tree import**.<br>Model-like **event-rate prediction** per row with calibration. Scales to 1,500+ attributes, optional sample in memory with **backtest in database** on the full table, and can *Send to Studio*. |
 
 ![Strategy Tree Builder](docs/images/tb_7_rules.png)
 
@@ -28,6 +28,7 @@ Two Dataiku webapps for building **credit strategy trees**, the decision trees r
 | [Strategy Studio](docs/strategy-studio.md) | Screens, nodes, backtest, champion / challenger, export and deploy |
 | [Strategy Tree Builder](docs/strategy-tree-builder.md) | Relevance, optimal splits, bin overrides, metrics, Visual ML import, scaling |
 | [Logic tab and formula language](docs/logic-and-formulas.md) | Calculations, rule splits, leaf formulas – with a worked example |
+| [Labels & risk examples](docs/labels.md) | Click-to-classify labels (rating, pricing tier, segment, test cell) inherited down the tree and carried into datasets, exports and Strategy Studio – four worked examples |
 | [Event-rate prediction](docs/event-rate-prediction.md) | `tree_proba_1` / `tree_prediction`, credibility weighting, freeze, calibration, backtest |
 | [Exports and integrations](docs/exports.md) | Every export format of both apps, Strategy Studio ↔ Tree Builder conversion |
 | [Architecture and API](docs/architecture.md) | Modules, routes, data contracts (JSON), folders, output columns |

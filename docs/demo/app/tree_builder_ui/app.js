@@ -226,6 +226,7 @@
   }
   function render(fit) {
     if (!svg || !S.tree) return;
+    S.labelMap = resolveLabels();
     var root = d3.hierarchy(S.tree, function (d) { return S.collapsed[d.id] ? null : (d.children && d.children.length ? d.children : null); });
     var h = cardH();
     d3.tree().nodeSize([CARD_W + 34, h + 76]).separation(function (a, b) { return a.parent === b.parent ? 1 : 1.15; })(root);
@@ -294,7 +295,8 @@
   }
   function drawCard(g, d, h, low) {
     var n = d.data, mt = S.metrics[n.id] || {}, key = JSON.stringify([n.name, n.split && n.split.variable, n.leaf && [n.leaf.mode, n.leaf.approve_at, n.leaf.refer_at, n.leaf.decision_output],
-      S.collapsed[n.id], low, mt.n, mt.bad_rate, metricRows().join(','), (n.calcs || []).length, n.children && n.children.length]);
+      S.collapsed[n.id], low, mt.n, mt.bad_rate, metricRows().join(','), (n.calcs || []).length, n.children && n.children.length,
+      JSON.stringify((S.labelMap || {})[n.id] || {}), JSON.stringify(labelDefs())]);
     if (g.attr('data-k') === key) return;   // unchanged → no DOM work
     g.attr('data-k', key); g.selectAll('*').remove();
     g.append('rect').attr('class', 'card').attr('width', CARD_W).attr('height', h);
@@ -319,6 +321,7 @@
       c.append('rect').attr('x', 12).attr('y', h - 19).attr('width', w).attr('height', 15).attr('rx', 7).attr('fill', chip.c);
       c.append('text').attr('x', 12 + w / 2).attr('y', h - 8).attr('text-anchor', 'middle').text(chip.t);
     }
+    drawLabelBadges(g, n, h);
     if (n.children && n.children.length) {
       var tg = g.append('g').attr('class', 'tog').attr('transform', 'translate(' + (CARD_W / 2) + ',' + (h + 1) + ')')
         .on('click', function (e) { e.stopPropagation(); S.collapsed[n.id] = !S.collapsed[n.id]; render(); });
@@ -895,12 +898,107 @@
     finally { busy(btn, false); btn.textContent = 'Backtest in database'; }
   }
 
+
+  // ── labels: click-to-classify nodes (risk rating, pricing tier, segment...), inherited downwards ──
+  var LABEL_COLORS = ['#0f766e', '#7b4bb7', '#b45309', '#1a6fc4', '#9f1239'];
+  var DEFAULT_LABEL_DEFS = [{ name: 'Rating', values: ['AAA', 'AA', 'A', 'BBB', 'BB', 'B'] }];
+  function labelDefs() {
+    return S.tree && S.tree.label_defs && S.tree.label_defs.length ? S.tree.label_defs : DEFAULT_LABEL_DEFS;
+  }
+  function resolveLabels() {
+    var out = {};
+    (function go(n, inh) {
+      var cur = {};
+      Object.keys(inh).forEach(function (k) { cur[k] = { v: inh[k].v, own: false, from: inh[k].from }; });
+      Object.keys(n.labels || {}).forEach(function (k) {
+        var v = n.labels[k]; if (v !== '' && v != null) cur[k] = { v: String(v), own: true, from: n.id };
+      });
+      out[n.id] = cur;
+      (n.children || []).forEach(function (c) { go(c, cur); });
+    })(S.tree, {});
+    return out;
+  }
+  function renderLabels(n) {
+    var defs = labelDefs(), cur = resolveLabels()[n.id] || {};
+    $('#labelRows').innerHTML = defs.map(function (d, i) {
+      var own = (n.labels || {})[d.name], inh = cur[d.name] && !cur[d.name].own ? cur[d.name] : null;
+      var vals = (d.values || []).map(String);
+      if (own != null && own !== '' && vals.indexOf(String(own)) < 0) vals.push(String(own));
+      var opts = '<option value="">' + (inh ? '— inherited: ' + esc(inh.v) + ' (from ' + esc(inh.from) + ') —' : '— none —') + '</option>' +
+        vals.map(function (v) { return '<option' + (String(own) === v ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('');
+      return '<label class="lab-row"><span class="lab-name" style="color:' + LABEL_COLORS[i % LABEL_COLORS.length] + '">' + esc(d.name) +
+        '</span><select data-label="' + esc(d.name) + '">' + opts + '</select></label>';
+    }).join('');
+    $$('#labelRows select').forEach(function (sel) {
+      sel.onchange = function () { setLabel(n.id, sel.getAttribute('data-label'), sel.value); };
+    });
+  }
+  function setLabel(id, name, value) {
+    commit(function (t) {
+      if (!t.label_defs || !t.label_defs.length) t.label_defs = clone(DEFAULT_LABEL_DEFS);
+      var nd = findNode(id); nd.labels = nd.labels || {};
+      if (value) nd.labels[name] = value; else delete nd.labels[name];
+      if (!Object.keys(nd.labels).length) delete nd.labels;
+    }, true);
+    toast(value ? name + ' = ' + value + ' on ' + id + ' and everything below it (unless labelled deeper).' : name + ' removed from ' + id + '.');
+  }
+  function ldRow(d, orig) {
+    return '<div class="ld-row" data-orig="' + esc(orig || '') + '"><input class="ldn" type="text" placeholder="Rating" value="' + esc(d.name || '') + '">' +
+      '<input class="ldv" type="text" placeholder="AAA, AA, A, BBB" value="' + esc((d.values || []).join(', ')) + '"><button class="danger rm">✕</button></div>';
+  }
+  function openLabelDefs() {
+    $('#ldList').innerHTML = labelDefs().map(function (d) { return ldRow(d, d.name); }).join('');
+    bindLd(); $('#labelDefsModal').hidden = false;
+  }
+  function bindLd() { $$('#ldList .rm').forEach(function (b) { b.onclick = function () { b.parentNode.remove(); }; }); }
+  function applyLabelDefs() {
+    var rows = $$('#ldList .ld-row'), defs = [], rename = {}, seen = {};
+    for (var i = 0; i < rows.length; i++) {
+      var nm = rows[i].querySelector('.ldn').value.trim(), orig = rows[i].getAttribute('data-orig');
+      var vals = rows[i].querySelector('.ldv').value.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      if (!nm && !vals.length) continue;
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(nm)) { toast('Label name "' + nm + '": letters, digits or _ only (e.g. Pricing_tier).', true); return; }
+      if (seen[nm]) { toast('Label name "' + nm + '" is used twice.', true); return; }
+      seen[nm] = 1; defs.push({ name: nm, values: vals });
+      if (orig && orig !== nm) rename[orig] = nm;
+    }
+    var keep = defs.map(function (d) { return d.name; }), removed = [];
+    labelDefs().forEach(function (d) { if (keep.indexOf(d.name) < 0 && !rename[d.name]) removed.push(d.name); });
+    if (removed.length && !window.confirm('Remove the label type(s) ' + removed.join(', ') + ' and their values on every node?')) return;
+    commit(function (t) {
+      t.label_defs = defs;
+      walk(t, function (n) {
+        if (!n.labels) return;
+        Object.keys(rename).forEach(function (o) { if (o in n.labels) { n.labels[rename[o]] = n.labels[o]; delete n.labels[o]; } });
+        removed.forEach(function (o) { delete n.labels[o]; });
+        if (!Object.keys(n.labels).length) delete n.labels;
+      });
+    }, true);
+    $('#labelDefsModal').hidden = true;
+    toast('Label types updated.');
+  }
+  function drawLabelBadges(g, n, h) {
+    var labs = (S.labelMap || {})[n.id] || {}, defs = labelDefs(), x = CARD_W - 8;
+    for (var i = defs.length - 1; i >= 0; i--) {
+      var L = labs[defs[i].name]; if (!L) continue;
+      var t = L.v.length > 9 ? L.v.slice(0, 8) + '…' : L.v, w = t.length * 6.4 + 12, col = LABEL_COLORS[i % LABEL_COLORS.length];
+      x -= w;
+      var b = g.append('g').attr('class', 'lblb');
+      b.append('title').text(defs[i].name + ' = ' + L.v + (L.own ? ' (set on this node)' : ' (inherited from ' + L.from + ')'));
+      b.append('rect').attr('x', x).attr('y', h - 19).attr('width', w).attr('height', 15).attr('rx', 4)
+        .attr('fill', L.own ? col : '#fff').attr('stroke', col).attr('stroke-width', 1.2);
+      b.append('text').attr('x', x + w / 2).attr('y', h - 8).attr('text-anchor', 'middle').attr('fill', L.own ? '#fff' : col).text(t);
+      x -= 4;
+    }
+  }
+
   // ── logic tab: calculations + leaf decision ────────────────────────
   function calcRow(c, cls) {
     return '<div class="calc-row ' + cls + '"><input class="cn" type="text" placeholder="name" value="' + esc(c.name || '') + '">' +
       '<input class="ce" type="text" placeholder="formula" value="' + esc(c.expr || '') + '"><button class="danger rm">✕</button></div>';
   }
   function renderLogic(n) {
+    renderLabels(n);
     $('#calcList').innerHTML = (n.calcs || []).map(function (c) { return calcRow(c, 'calc'); }).join('') ||
       '<div class="hint">No calculations. Example: <code>adj_score</code> = <code>policy_score_existing - 15 * inquiries_6m_count</code></div>';
     var leaf = !n.split, isRoot = S.tree && n.id === S.tree.id;
@@ -1123,6 +1221,10 @@
   $('#btnCalib').onclick = openCalibration;
   $('#btnCalClose').onclick = function () { $('#calModal').hidden = true; };
   $('#btnDbBt').onclick = backtestDb;
+  $('#btnLabelDefs').onclick = openLabelDefs;
+  $('#btnLdClose').onclick = function () { $('#labelDefsModal').hidden = true; };
+  $('#btnLdAdd').onclick = function () { $('#ldList').insertAdjacentHTML('beforeend', ldRow({}, '')); bindLd(); };
+  $('#btnLdApply').onclick = applyLabelDefs;
   $('#btnDbClose').onclick = function () { $('#dbModal').hidden = true; };
 
   init();
