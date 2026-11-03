@@ -1,0 +1,194 @@
+<div class="tb">
+  <aside class="tb-side">
+    <div class="tb-logo">
+      <div class="tb-logo-icon">ST</div>
+      <div><div class="tb-logo-title">Strategy Tree Builder</div><div class="tb-logo-sub">Strategy trees &middot; optimal binning</div></div>
+    </div>
+    <div class="tb-side-body">
+      <div class="sec">Population</div>
+      <label>Dataset<select id="ds"><option>Loading…</option></select></label>
+      <label>Target (1 = event) <span class="hint">e.g. bad, repaid, fraud</span><select id="target"></select></label>
+      <label>Score column <span class="hint">default leaf score</span><select id="scoreCol"></select></label>
+      <div class="grid2">
+        <label>Margin / non-event ($)<input id="margin" type="number" value="350"></label>
+        <label>Loss / event ($)<input id="loss" type="number" value="4200"></label>
+      </div>
+      <button id="btnLoad" class="primary w">Load population</button>
+      <div id="popInfo" class="hint" style="margin-top:6px"></div>
+
+      <div class="sec">Strategy</div>
+      <label>Name<input id="stName" type="text" value="TREE_CHALLENGER_1"></label>
+      <div class="grid2">
+        <label>Status<select id="stStatus"><option>DRAFT</option><option>CHALLENGER</option><option>CHAMPION</option></select></label>
+        <label>&nbsp;<button id="btnSave" class="success w" style="margin-top:0">Save</button></label>
+      </div>
+      <label>Saved trees<select id="savedSel"><option value="">—</option></select></label>
+      <button id="btnOpen" class="w">Open</button>
+
+      <div class="sec">Prediction <span class="hint">leaf event rate, like Visual ML scoring</span></div>
+      <div class="grid2">
+        <label>Credibility weight<input id="pdCred" type="number" min="0" step="5" value="30" title="Small leaves are shrunk toward their parent: (events + m × parent rate) / (outcomes + m). 0 = raw leaf event rate."></label>
+        <label>Predict 1 if rate ≥<input id="pdThr" type="number" min="0" max="1" step="0.01" placeholder="base rate"></label>
+      </div>
+      <label>Holdout % <span class="hint">kept out of the rates, used for calibration</span><input id="pdHold" type="number" min="0" max="50" step="5" value="0"></label>
+      <div id="pdStatus" class="pd-status"></div>
+      <div class="grid2">
+        <button id="btnFreeze">Freeze leaf rates</button>
+        <button id="btnCalib">Calibration…</button>
+      </div>
+      <button id="btnUnfreeze" class="w" hidden>Unfreeze (use live rates)</button>
+
+      <div class="sec">Import</div>
+      <label>Visual ML decision tree<select id="vmlSel"><option value="">Load a population first</option></select></label>
+      <div class="grid2">
+        <label>Approve class<input id="vmlClass" type="text" placeholder="auto"></label>
+        <label>P(approve) ≥<input id="vmlThr" type="number" value="0.5" step="0.05"></label>
+      </div>
+      <button id="btnVml" class="w">Import tree</button>
+      <label style="margin-top:8px">Binning v2 configuration <span class="hint">split definitions</span><select id="cfgSel"><option value="">—</option></select></label>
+
+      <div class="sec">Export &amp; deploy</div>
+      <label>Format<select id="expFmt">
+        <option value="json">Strategy tree JSON</option><option value="sql">SQL CASE</option>
+        <option value="python">Python function</option><option value="studio">Strategy Studio JSON</option></select></label>
+      <div class="grid2">
+        <button id="btnExport">Download</button>
+        <button id="btnStudio" class="ghost">Send to Studio</button>
+      </div>
+      <label style="margin-top:8px">Output dataset<input id="outName" type="text" placeholder="<input>_tree"></label>
+      <button id="btnWrite" class="w">Write decisions dataset</button>
+    </div>
+  </aside>
+
+  <main class="tb-main">
+    <div class="tb-top">
+      <div id="kpis" class="kpis"></div>
+      <div class="row" style="margin:0">
+        <button id="btnUndo" title="Undo">↶ Undo</button>
+        <button id="btnFit">Fit</button>
+        <button id="btnExpand">Expand all</button>
+        <button id="btnMetrics">Node metrics…</button>
+      </div>
+    </div>
+    <div id="guide" class="tb-guide" hidden></div>
+    <div id="canvas" class="tb-canvas">
+      <svg id="svg"></svg>
+      <div id="emptyMsg" class="tb-empty">Choose a population and click <b>Load population</b>.</div>
+    </div>
+    <div id="issues" class="tb-issues" hidden></div>
+  </main>
+
+  <section class="tb-panel">
+    <div id="nodeHead" class="tb-nodehead">
+      <input id="nodeName" type="text" placeholder="Node name">
+      <div id="nodeSub" class="hint"></div>
+    </div>
+    <nav class="tabs">
+      <button data-tab="split" class="active">Split</button>
+      <button data-tab="logic">Logic</button>
+      <button data-tab="metrics">Metrics</button>
+    </nav>
+
+    <div class="tab" id="tab-split">
+      <div class="rel-head">
+        <input id="relSearch" type="search" placeholder="Search attributes…">
+        <label class="inline"><input id="relHide" type="checkbox" checked> hide flagged</label>
+      </div>
+      <div class="rel-cols"><span>Attribute</span><span>Relevance</span><span>IV</span></div>
+      <div id="relList" class="rel-list"><div id="relSpacer"></div><div id="relRows"></div></div>
+      <div id="relInfo" class="hint"></div>
+
+      <div id="splitBox" class="split-box" hidden>
+        <div class="row-between"><h3 id="sbTitle">Split</h3><span id="sbSource" class="pill"></span></div>
+        <div class="grid4">
+          <label>Max branches<input id="sbBins" type="number" value="4" min="2" max="12"></label>
+          <label>Min branch %<input id="sbMin" type="number" value="5" min="1" max="40"></label>
+          <label>Trend<select id="sbTrend"><option value="auto">auto</option><option value="ascending">ascending</option>
+            <option value="descending">descending</option><option value="peak">peak</option><option value="valley">valley</option><option value="none">none</option></select></label>
+          <label>Missing<select id="sbMiss"><option value="auto">auto</option><option value="separate">own branch</option>
+            <option value="similar">similar risk</option><option value="worst">worst risk</option></select></label>
+        </div>
+        <div class="row"><button id="btnSuggest" class="primary">Optimal split (optbinning)</button>
+          <button id="btnFromCfg" hidden>Use saved binning</button></div>
+        <div class="sb-edit">
+          <label>Kind<select id="sbKind"><option value="numeric">numeric cuts</option><option value="categorical">category groups</option><option value="rule">business rules</option></select></label>
+          <label id="sbVarWrap">Variable / calculation<input id="sbVar" type="text"></label>
+          <label id="sbCutsWrap">Cuts <span class="hint">comma separated, x &lt; c1 | c1 ≤ x &lt; c2 …</span><input id="sbCuts" type="text"></label>
+          <label id="sbGroupsWrap" hidden>Groups <span class="hint">one group per line, values comma separated</span><textarea id="sbGroups" rows="4"></textarea></label>
+          <label id="sbRulesWrap" hidden>Rules <span class="hint">one formula per line, first true wins, then "Otherwise"</span><textarea id="sbRules" rows="4" placeholder="debt_to_income_pct > 45 and vantage_score < 680"></textarea></label>
+          <div class="grid2">
+            <label id="sbMissWrap">Missing values go to<select id="sbMissBr"></select></label>
+            <label id="sbOtherWrap" hidden>Unlisted categories go to<select id="sbOtherBr"></select></label>
+          </div>
+          <div class="row"><button id="btnPreview">Preview</button><button id="btnApply" class="success">Apply split</button></div>
+        </div>
+        <div id="sbPreview"></div>
+      </div>
+      <div class="row"><button id="btnEditSplit" hidden>✎ Edit this split (bins)</button><button id="btnManual">+ Manual / rule split</button><button id="btnPrune" class="danger" hidden>Remove split (make leaf)</button></div>
+    </div>
+
+    <div class="tab" id="tab-logic" hidden>
+      <h3>Calculations <span class="hint">evaluated for rows reaching this node; usable below it</span></h3>
+      <div id="calcList"></div>
+      <div class="row"><button id="btnAddCalc">+ Calculation</button></div>
+      <div id="leafBox">
+        <h3 style="margin-top:14px">Leaf decision</h3>
+        <div class="grid2">
+          <label>Decision<select id="lfMode"><option value="cutoff">score cut-off</option><option value="approve">APPROVE</option>
+            <option value="refer">REFER</option><option value="decline">DECLINE</option></select></label>
+          <label>Pricing tier<input id="lfTier" type="text"></label>
+        </div>
+        <label id="lfScoreWrap">Score formula<input id="lfScore" type="text" placeholder="policy_score_existing - 10 * inquiries_6m_count"></label>
+        <div class="grid2" id="lfCutWrap">
+          <label>Approve at ≥<input id="lfApprove" type="number"></label>
+          <label>Refer at ≥<input id="lfRefer" type="number"></label>
+        </div>
+        <label>Reason codes <span class="hint">comma separated</span><input id="lfReasons" type="text"></label>
+        <label>Credit-limit multiplier <span class="hint">number or formula</span><input id="lfLimit" type="text" placeholder="1.0"></label>
+        <div id="lfPd" class="pd-box"></div>
+        <h3 style="margin-top:10px">Outputs <span class="hint">extra formulas written with the decision</span></h3>
+        <div id="outList"></div>
+        <div class="row"><button id="btnAddOut">+ Output</button></div>
+      </div>
+      <div class="row"><button id="btnApplyLogic" class="success">Apply logic</button></div>
+      <details class="hint fn-help"><summary>Formula functions</summary><div id="fnHelp"></div></details>
+    </div>
+
+    <div class="tab" id="tab-metrics" hidden>
+      <table id="nodeMetrics" class="tbl"></table>
+    </div>
+  </section>
+
+  <div id="metricsModal" class="modal" hidden>
+    <div class="modal-box">
+      <div class="row-between"><h3>Node metrics shown on the tree</h3><button id="btnMetricsClose">✕</button></div>
+      <div id="metricChecks" class="metric-checks"></div>
+      <h3 style="margin-top:12px">Custom metrics</h3>
+      <p class="hint">Aggregations of a formula over the rows in each node, e.g. <code>mean</code> of <code>debt_to_income_pct</code>,
+        <code>rate</code> of <code>thin_file_flag == 1</code>, <code>sum</code> of <code>requested_amount</code>.</p>
+      <div id="customList"></div>
+      <div class="row"><button id="btnAddCustom">+ Custom metric</button><span class="hint">Saved with the strategy and remembered in this browser.</span></div>
+      <div class="row" style="justify-content:flex-end"><button id="btnMetricsSave" class="primary">Apply</button></div>
+    </div>
+  </div>
+  <div id="calModal" class="modal" hidden>
+    <div class="modal-box wide">
+      <div class="row-between"><h3>Leaf event-rate calibration</h3><button id="btnCalClose">✕</button></div>
+      <div id="calBody"></div>
+    </div>
+  </div>
+  <div id="binModal" class="modal" hidden>
+    <div class="modal-box wide">
+      <div class="row-between"><h3>Bin statistics</h3><button id="btnBinClose">✕</button></div>
+      <div id="binModalBody"></div>
+    </div>
+  </div>
+  <div id="editModal" class="modal edit" hidden>
+    <div class="modal-box small">
+      <h3 id="editTitle">Edit</h3>
+      <div id="editBody"></div>
+      <div class="row" style="justify-content:flex-end"><button id="btnEditCancel">Cancel</button><button id="btnEditApply" class="primary">Apply</button></div>
+    </div>
+  </div>
+  <div id="toast" class="toast" hidden></div>
+</div>
