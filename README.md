@@ -1,5 +1,7 @@
 # Business Inference Tree
 
+> **A personal open-source project by Luiz Kauffmann.** It is independent work: not a Dataiku product, and not affiliated with, endorsed by or supported by Dataiku or any other company named in this repository.
+
 Two Dataiku webapps for building **credit strategy trees**, the decision trees risk teams use to turn a score and bureau / application attributes into decisions:
 
 | Webapp | What it is for |
@@ -45,7 +47,7 @@ scored dataset ──► Strategy Tree Builder ──(Send to Studio)──► S
 
 ## Status and scope
 
-- **Field-built accelerator**, not a packaged Dataiku product feature. Standard Dataiku (Python / Flask webapp backends) plus open-source `optbinning` (Apache 2.0).
+- **Personal project.** Designed and built by Luiz Kauffmann. It runs on standard Dataiku features (Python / Flask webapp backends) plus open-source `optbinning` (Apache 2.0), but it is not a packaged or supported Dataiku feature.
 - **Illustrative engine exports.** Except DMN 1.3, the decision-engine exports are illustrative mappings of each engine's concepts, not official vendor import formats. Each file says so in its `schemaNote`.
 - **Simulated deployment.** It packages the strategy and stores a receipt; no external system is called.
 - **Synthetic test data.** The tests and the generator use synthetic data only.
@@ -61,4 +63,9 @@ tests/                       synthetic data generator, engine tests, Playwright 
 docs/                        guides and screenshots
 ```
 
-Licensed under the Apache License 2.0 (see `LICENSE`).
+## Author, licence and trademarks
+
+- **Author:** Luiz Kauffmann ([@Luizkauffmann](https://github.com/Luizkauffmann)). Copyright © 2026 Luiz Kauffmann.
+- **Licence:** Apache License 2.0 (see `LICENSE` and `NOTICE`). You may use, modify and redistribute the code under its terms, keeping the copyright and notice.
+- **No warranty.** This is not financial, credit-risk or regulatory advice. Validate any strategy, model or export on your own data and under your own governance before using it for real decisions.
+- **Trademarks.** Dataiku, Equifax / InterConnect, Experian / PowerCurve, FICO, Oscilar, Pega, Provenir, Taktile and Angoss / Knowledge Studio are trademarks of their respective owners. They are mentioned only to describe compatibility or comparable concepts; no endorsement is implied.
