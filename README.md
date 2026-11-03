@@ -29,6 +29,7 @@ Two Dataiku webapps for building **credit strategy trees**, the decision trees r
 | [Strategy Tree Builder](docs/strategy-tree-builder.md) | Relevance, optimal splits, bin overrides, metrics, Visual ML import, scaling |
 | [Logic tab and formula language](docs/logic-and-formulas.md) | Calculations, rule splits, leaf formulas – with a worked example |
 | [Labels & risk examples](docs/labels.md) | Click-to-classify labels (rating, pricing tier, segment, test cell) inherited down the tree and carried into datasets, exports and Strategy Studio – four worked examples |
+| [Visual ML import](docs/visual-ml-import.md) | Turn a Lab decision tree into an editable strategy tree – a UCI risk-tree walkthrough and a surrogate of an existing decision |
 | [Event-rate prediction](docs/event-rate-prediction.md) | `tree_proba_1` / `tree_prediction`, credibility weighting, freeze, calibration, backtest |
 | [Exports and integrations](docs/exports.md) | Every export format of both apps, Strategy Studio ↔ Tree Builder conversion |
 | [Architecture and API](docs/architecture.md) | Modules, routes, data contracts (JSON), folders, output columns |

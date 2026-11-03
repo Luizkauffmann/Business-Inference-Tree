@@ -14,6 +14,7 @@ echo "== logic example"; $PY tests/wiki_examples.py build/lib "$DATA"
 echo "== outputs";       $PY tests/outputs_test.py build/lib "$DATA"
 echo "== studio conv";   $PY tests/studio_conv.py build/lib "$DATA"
 echo "== rule conv";     $PY tests/rule_conv_test.py build/lib "$DATA"
+echo "== VML import (UCI)"; $PY tests/uci_vml_example.py build/lib docs/demo/data/credit_card_default.csv
 echo "== UI";            $PY tests/ui_test.py build/lib tests/stub build/out "$DATA"
 echo "== bin editor";    $PY tests/bins_test.py build/lib tests/stub build/out "$DATA"
 echo "== event-rate UI"; $PY tests/pd_ui_test.py build/lib tests/stub build/out "$DATA"

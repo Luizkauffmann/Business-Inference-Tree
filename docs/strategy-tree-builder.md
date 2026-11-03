@@ -116,6 +116,8 @@ Select any node → *Logic* → **Labels** and pick a value (e.g. `Rating` = `BB
 - On the test data, the imported tree reproduces the model's decision on 100 % of rows.
 - Other preprocessings (impact coding, hashing, derived features) are reported as not supported.
 
+**Walkthrough:** [Visual ML import](visual-ml-import.md) – a risk tree on the UCI sample (100 % agreement with the model on 15,010 validation rows) and a surrogate of an existing decision.
+
 ## Performance and scaling
 
 ![1,500 attributes](images/tb_4_wide.png)
