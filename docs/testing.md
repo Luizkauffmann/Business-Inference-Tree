@@ -22,6 +22,7 @@ It uses `uv` by default. To use another interpreter, set `PY="python"` with the 
 | `pd_test.py` | Leaf event rate = node event rate at credibility 0; credibility shrinkage and intervals.<br>Freeze with holdout; scoring without a target; calibration.<br>SQL / Python exports reproduce `tree_proba_1` and `tree_prediction`; stale detection. |
 | `wiki_examples.py` | The [Logic tab worked example](logic-and-formulas.md) validates, evaluates and exports identically to SQL and Python |
 | `outputs_test.py` | Multiple outputs per leaf: default outputs, leaf values, decision from an output, segment-only leaves. App, SQL and Python agree on every column, with live and frozen leaf rates. |
+| `decout_ui_test.py` (browser) | *Decision = from an output…* on a leaf without outputs: a starter `credit_decision` output is added and selected; Apply logic links them; card chip; leaf decisions equal the output; no duplicate when switching modes |
 | `studio_conv.py` | *Send to Studio* conversion gives identical decisions under Strategy Studio's semantics (missing branches, other categories) |
 | `ui_test.py` (browser) | Load, relevance %, optimal split, debounced search, Binning v2 config, formulas, custom metrics, save, Send to Studio, write dataset, Visual ML import, 1,500-attribute virtualised list |
 | `bins_test.py` (browser) | Bin table, multi-select merge (adjacent rule), split bin, edit boundary (valid range), missing routing, undo, full table, editing an existing split while keeping sub-trees, categorical merge / move, rule merge |

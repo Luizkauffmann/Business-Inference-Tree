@@ -18,6 +18,7 @@ echo "== bin editor";    $PY tests/bins_test.py build/lib tests/stub build/out "
 echo "== event-rate UI"; $PY tests/pd_ui_test.py build/lib tests/stub build/out "$DATA"
 echo "== outputs UI";    $PY tests/outputs_ui_test.py build/lib tests/stub build/out "$DATA"
 echo "== SQL dialects";   $PY tests/dialect_test.py build/lib "$DATA" tests/outputs_test.py
+echo "== decision output"; $PY tests/decout_ui_test.py build/lib tests/stub build/out "$DATA"
 echo "== DB backtest";     $PY tests/dbbt_test.py build/lib tests/stub build/out "$DATA"
 echo "== DP binning";      $PY tests/dp_test.py build/lib "$DATA"
 echo "== browser demo";   demo/tools/build_demo.sh > /dev/null && $PY tests/demo_browser_test.py build/out

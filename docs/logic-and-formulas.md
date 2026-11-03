@@ -84,6 +84,16 @@ A leaf can produce **several outputs**: a credit decision, a pricing grade, an A
 
 The KPI strip adds **No decision (segment)** when some rows have no decision. Approval-based KPIs count APPROVE only.
 
+**Using "from an output…", step by step**
+1. On a leaf, set **Decision = from an output…**.
+2. If the leaf has no outputs yet, the app adds a ready-made output and selects it in **Decision comes from output**:
+   `credit_decision` = `'APPROVE' if leaf_event_rate < 0.10 else ('REFER' if leaf_event_rate < 0.15 else 'DECLINE')`.
+3. Edit that formula under **Outputs**, add more outputs if you like (e.g. `apr`, `max_amount`), and click **Apply logic**.
+4. The card shows `= credit_decision`, and every row of the leaf gets `tree_decision` = its `out_credit_decision`.
+5. In this mode the *Score formula* is optional: outputs can use its value as `leaf_score`.
+
+![Decision from an output](images/tb_13_decision_output.png)
+
 ### Leaf values usable in formulas
 
 | Name | Value | Usable in |

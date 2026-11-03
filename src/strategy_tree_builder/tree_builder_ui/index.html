@@ -141,8 +141,12 @@
             <option value="output">from an output…</option><option value="none">none (segment only)</option></select></label>
           <label>Pricing tier<input id="lfTier" type="text"></label>
         </div>
-        <label id="lfDecOutWrap" hidden>Decision output <span class="hint">its value (APPROVE / REFER / DECLINE…) becomes tree_decision</span><select id="lfDecOut"></select></label>
-        <label id="lfScoreWrap">Score formula<input id="lfScore" type="text" placeholder="policy_score_existing - 10 * inquiries_6m_count"></label>
+        <div id="lfDecOutWrap" class="decout" hidden>
+          <label>Decision comes from output<select id="lfDecOut"></select></label>
+          <div class="hint">The value of this output (<code>APPROVE</code> / <code>REFER</code> / <code>DECLINE</code>) becomes the leaf's decision.
+            Write its formula under <b>Outputs</b> below, then click <b>Apply logic</b>.</div>
+        </div>
+        <label id="lfScoreWrap"><span id="lfScoreLbl">Score formula</span><input id="lfScore" type="text" placeholder="policy_score_existing - 10 * inquiries_6m_count"></label>
         <div class="grid2" id="lfCutWrap">
           <label>Approve at ≥<input id="lfApprove" type="number"></label>
           <label>Refer at ≥<input id="lfRefer" type="number"></label>

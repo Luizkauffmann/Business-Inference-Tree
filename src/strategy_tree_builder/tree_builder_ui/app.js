@@ -925,12 +925,23 @@
     bindRemovers();
   }
   function bindRemovers() { $$('.calc-row .rm').forEach(function (b) { b.onclick = function () { b.parentNode.remove(); }; }); }
-  function leafVisibility() {
+  var STARTER_DECISION = { name: 'credit_decision',
+    expr: "'APPROVE' if leaf_event_rate < 0.10 else ('REFER' if leaf_event_rate < 0.15 else 'DECLINE')" };
+  function leafVisibility(fromUser) {
     var m = $('#lfMode').value, c = m === 'cutoff';
     $('#lfCutWrap').hidden = !c; $('#lfDecOutWrap').hidden = m !== 'output';
     $('#lfScoreWrap').hidden = m === 'approve' || m === 'refer' || m === 'decline';
+    $('#lfScoreLbl').textContent = c ? 'Score formula' : 'Score formula (optional – outputs can use it as leaf_score)';
     if (m === 'output') {
       var names = readRows('out').map(function (o) { return o.name; });
+      if (fromUser === true && !names.length) {
+        // nothing to pick yet: add a ready-made decision output the user can edit
+        $('#outList').insertAdjacentHTML('beforeend', calcRow(STARTER_DECISION, 'out')); bindRemovers();
+        names = [STARTER_DECISION.name]; S.lfDecOut = STARTER_DECISION.name;
+        var row = $$('#outList .calc-row.out').pop();
+        if (row) { row.classList.add('flash'); row.scrollIntoView({ block: 'center', behavior: 'smooth' }); row.querySelector('.ce').focus(); }
+        toast('Added the output credit_decision – edit its formula, then click Apply logic.');
+      }
       (S.tree.default_outputs || []).forEach(function (o) { if (names.indexOf(o.name) < 0) names.push(o.name); });
       var cur = $('#lfDecOut').value || S.lfDecOut || '';
       $('#lfDecOut').innerHTML = names.length ? names.map(function (x) { return '<option' + (x === cur ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('')
@@ -1082,7 +1093,7 @@
   $('#btnAddOut').onclick = function () { $('#outList').insertAdjacentHTML('beforeend', calcRow({}, 'out')); bindRemovers(); };
   $('#btnAddDefOut').onclick = function () { $('#defOutList').insertAdjacentHTML('beforeend', calcRow({}, 'dout')); bindRemovers(); };
   $('#outList').addEventListener('change', function () { if ($('#lfMode').value === 'output') leafVisibility(); });
-  $('#lfMode').onchange = leafVisibility;
+  $('#lfMode').onchange = function () { leafVisibility(true); };
   $('#btnApplyLogic').onclick = applyLogic;
   $('#nodeName').addEventListener('change', function () {
     var id = S.selected, v = $('#nodeName').value;
