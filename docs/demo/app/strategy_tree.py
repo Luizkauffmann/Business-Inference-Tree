@@ -1578,6 +1578,81 @@ def to_python(tree, meta, leaf_rates=None, rates_source=None):
     return "\n".join(lines) + "\n"
 
 
+def backtest_sql(tree, meta, table, target=None, leaf_rates=None, rates_source=None):
+    """In-database backtest: the exported SQL of the tree, aggregated per leaf and decision.
+    Runs in the warehouse (Snowflake, PostgreSQL...) on the full table; only the summary comes back."""
+    inner = to_sql(tree, meta, table=table, leaf_rates=leaf_rates, rates_source=rates_source)
+    t = _q(target) if target else None
+    known = f"SUM(CASE WHEN {t} IN (0, 1) THEN 1 ELSE 0 END)" if t else "0"
+    events = f"SUM(CASE WHEN {t} = 1 THEN 1 ELSE 0 END)" if t else "0"
+    sum_p = ",\n  SUM(tree_proba_1) AS sum_p" if pd_state(tree) == "frozen" else ""
+    return (f"WITH scored AS (\n{inner}\n)\nSELECT\n  tree_leaf, tree_decision,\n  COUNT(*) AS n,\n  {known} AS n_known,\n"
+            f"  {events} AS events{sum_p}\nFROM scored\nGROUP BY tree_leaf, tree_decision")
+
+
+def backtest_groups(res, df, target=None):
+    """Same aggregation as backtest_sql, on an in-memory evaluation."""
+    y = target_array(df, target)
+    g = pd.DataFrame({"tree_leaf": res["tree_leaf"].values, "tree_decision": res["tree_decision"].values,
+                      "known": (~np.isnan(y)).astype(int) if y is not None else 0,
+                      "event": np.nan_to_num(y, nan=0.0) if y is not None else 0.0})
+    if "tree_proba_1" in res and pd_state_from_res(res):
+        g["p"] = res["tree_proba_1"].values
+    agg = dict(n=("known", "size"), n_known=("known", "sum"), events=("event", "sum"))
+    if "p" in g:
+        agg["sum_p"] = ("p", "sum")
+    return g.groupby(["tree_leaf", "tree_decision"], dropna=False).agg(**agg).reset_index()
+
+
+def pd_state_from_res(res):
+    src = res.get("tree_event_rate_source")
+    return src is not None and len(src) and str(src.iloc[0]).startswith("frozen")
+
+
+def backtest_summary(groups, margin=None, loss=None):
+    """KPIs from per-leaf/decision counts (in-memory or in-database)."""
+    g = groups.copy()
+    g.columns = [str(c).lower() for c in g.columns]
+    for c in ("n", "n_known", "events", "sum_p"):
+        if c in g:
+            g[c] = pd.to_numeric(g[c], errors="coerce").fillna(0.0)
+    n = float(g["n"].sum())
+    dec = g["tree_decision"].astype(object).where(g["tree_decision"].notna(), None)
+    rate = lambda m: float(g.loc[m, "n"].sum() / n) if n else None
+    app = (dec == "APPROVE").values
+    ak, ae = float(g.loc[app, "n_known"].sum()), float(g.loc[app, "events"].sum())
+    kn, ev = float(g["n_known"].sum()), float(g["events"].sum())
+    out = dict(n=int(n), approval_rate=rate(app), refer_rate=rate((dec == "REFER").values),
+               decline_rate=rate((dec == "DECLINE").values), no_decision_rate=rate(dec.isna().values),
+               n_known=int(kn), event_rate=ev / kn if kn else None, event_rate_approved=ae / ak if ak else None,
+               avg_predicted=float(g["sum_p"].sum() / n) if "sum_p" in g and n else None)
+    if margin is not None and loss is not None:
+        out["profit"] = margin * (ak - ae) - loss * ae
+        out["profit_per_row"] = out["profit"] / n if n else None
+    return out
+
+
+def backtest_leaves(mem, db):
+    """Per-leaf share and event rate, in memory vs in database."""
+    def per(g):
+        g = g.copy()
+        g.columns = [str(c).lower() for c in g.columns]
+        for c in ("n", "n_known", "events"):
+            g[c] = pd.to_numeric(g[c], errors="coerce").fillna(0.0)
+        t = g.groupby("tree_leaf")[["n", "n_known", "events"]].sum()
+        t["share"] = t["n"] / t["n"].sum() if t["n"].sum() else np.nan
+        t["event_rate"] = np.where(t["n_known"] > 0, t["events"] / t["n_known"].replace(0, np.nan), np.nan)
+        return t
+    a, b = per(mem), per(db)
+    out = []
+    for leaf in sorted(set(a.index) | set(b.index), key=lambda x: (str(x))):
+        ra, rb = (a.loc[leaf] if leaf in a.index else None), (b.loc[leaf] if leaf in b.index else None)
+        f = lambda r, k: None if r is None or pd.isna(r[k]) else float(r[k])
+        out.append(dict(leaf=leaf, n_mem=f(ra, "n"), n_db=f(rb, "n"), share_mem=f(ra, "share"), share_db=f(rb, "share"),
+                        event_rate_mem=f(ra, "event_rate"), event_rate_db=f(rb, "event_rate")))
+    return out
+
+
 def to_generic(tree, meta):
     body = {"type": "dataiku_strategy_tree_v2", "version": 2, "meta": meta, "tree": tree}
     body["checksum"] = "sha256:" + hashlib.sha256(json.dumps(tree, sort_keys=True, default=str).encode()).hexdigest()

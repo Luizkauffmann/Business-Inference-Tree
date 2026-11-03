@@ -151,3 +151,4 @@
 .tb .tbl td.bad { color: var(--red); font-weight: 600; } .tb .tbl td.good { color: var(--green); font-weight: 600; }
 .tb .out-help { margin: -2px 0 6px; line-height: 1.5; }
 .tb #inheritedOuts { margin-top: 4px; }
+.tb .sqlbox { max-height: 260px; overflow: auto; background: #1e2433; color: #e6e9ef; padding: 8px 10px; border-radius: 6px; font: 11px/1.45 Menlo, Consolas, monospace; white-space: pre; }

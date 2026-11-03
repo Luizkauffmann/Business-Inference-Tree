@@ -108,13 +108,14 @@
     try {
       await ensureD3();
       var r = await api('/api/load', { dataset: $('#ds').value, target: $('#target').value || null, score_col: $('#scoreCol').value || null,
-        margin: $('#margin').value, loss: $('#loss').value });
+        margin: $('#margin').value, loss: $('#loss').value, sample_rows: $('#sampleRows').value || null });
       S.loaded = true; S.cfg = r.cfg; S.columns = r.columns; S.colByName = {}; S.functions = r.functions || {};
       r.columns.forEach(function (c) { S.colByName[c.name] = c; });
       S.metricLabels = r.metric_labels;
       S.tree = r.starter; S.selected = S.tree.id; S.collapsed = {}; S.undo = []; S.rel = null;
       $('#popInfo').textContent = num(r.n) + ' rows · ' + (r.n_known != null ? num(r.n_known) + ' with outcome · event rate ' + pct(r.bad_rate) : 'no target') +
-        (r.prebin_rows < r.n ? ' · relevance on a ' + num(r.prebin_rows) + '-row sample' : '');
+        (r.prebin_rows < r.n ? ' · relevance on a ' + num(r.prebin_rows) + '-row sample' : '') +
+        (r.cfg.sample_rows ? ' · random sample loaded (use Backtest in database for the full table)' : ' · all rows in memory');
       $('#outName').placeholder = S.cfg.dataset + '_tree';
       $('#emptyMsg').hidden = true;
       $('#fnHelp').innerHTML = Object.keys(S.functions).map(function (k) { return '<code>' + esc(k) + '</code> ' + esc(S.functions[k]); }).join('<br>');
@@ -842,6 +843,48 @@
     $('#calModal').hidden = false;
   }
 
+
+  // ── backtest in database (full table, SQL export run by the warehouse) ──
+  async function backtestDb() {
+    if (!S.loaded) { toast('Load a population first.', true); return; }
+    var btn = $('#btnDbBt'); busy(btn, true); btn.textContent = 'Running in database…';
+    try {
+      var r = await api('/api/backtest_db', { tree: S.tree, meta: meta() });
+      var m = r.mem, d = r.db;
+      var line = function (label, a, b, fmt, diff) {
+        var dv = a == null || b == null ? '–' : diff(b - a);
+        return '<tr><td>' + label + '</td><td class="n">' + fmt(a) + '</td><td class="n">' + fmt(b) + '</td><td class="n">' + dv + '</td></tr>';
+      };
+      var pts = function (x) { return (x > 0 ? '+' : '') + (100 * x).toFixed(2) + ' pts'; };
+      var p2 = function (x) { return pct(x, 2); };
+      var memLabel = r.sample_rows ? 'In memory (random sample, ' + num(r.rows_in_memory) + ' rows)' : 'In memory (all ' + num(r.rows_in_memory) + ' rows)';
+      $('#dbBody').innerHTML = '<div class="hint">Table <code>' + esc(r.table) + '</code> · query ' + r.seconds.toFixed(1) + ' s' +
+        (r.rates_note ? ' · leaf event rates in formulas: ' + esc(r.rates_note) : '') + '</div>' +
+        '<table class="tbl"><tr><th>KPI</th><th class="n">' + memLabel + '</th><th class="n">In database (full table)</th><th class="n">Difference</th></tr>' +
+        line('Rows', m.n, d.n, num, function (x) { return (x > 0 ? '+' : '') + num(x); }) +
+        line('Approval', m.approval_rate, d.approval_rate, pct, pts) +
+        line('Refer', m.refer_rate, d.refer_rate, pct, pts) +
+        line('Decline', m.decline_rate, d.decline_rate, pct, pts) +
+        (m.no_decision_rate || d.no_decision_rate ? line('No decision (segment)', m.no_decision_rate, d.no_decision_rate, pct, pts) : '') +
+        line('Event rate (rows with outcome)', m.event_rate, d.event_rate, p2, pts) +
+        line('Event rate approved', m.event_rate_approved, d.event_rate_approved, p2, pts) +
+        (d.avg_predicted != null ? line('Avg predicted event rate (frozen)', m.avg_predicted, d.avg_predicted, p2, pts) : '') +
+        (d.profit != null ? line('Profit', m.profit, d.profit, money, function (x) { return (x > 0 ? '+' : '−') + money(Math.abs(x)).replace('−', ''); }) +
+          line('Profit per 1,000 rows', m.profit_per_row, d.profit_per_row, function (x) { return x == null ? '–' : money(x * 1000); }, function (x) { return (x > 0 ? '+' : '−') + money(Math.abs(x * 1000)).replace('−', ''); }) : '') +
+        '</table>' +
+        '<h3 style="margin-top:12px">By leaf</h3><table class="tbl"><tr><th>Leaf</th><th class="n">Share in memory</th><th class="n">Share in database</th>' +
+        '<th class="n">Event rate in memory</th><th class="n">Event rate in database</th><th class="n">Difference</th></tr>' +
+        r.leaves.map(function (l) {
+          var dd = l.event_rate_mem == null || l.event_rate_db == null ? '–' : pts(l.event_rate_db - l.event_rate_mem);
+          return '<tr><td>' + esc(l.leaf) + '</td><td class="n">' + pct(l.share_mem) + '</td><td class="n">' + pct(l.share_db) + '</td><td class="n">' +
+            pct(l.event_rate_mem, 2) + '</td><td class="n">' + pct(l.event_rate_db, 2) + '</td><td class="n">' + dd + '</td></tr>';
+        }).join('') + '</table>' +
+        '<details style="margin-top:10px"><summary class="hint">SQL run in the database</summary><pre class="sqlbox">' + esc(r.sql) + '</pre></details>';
+      $('#dbModal').hidden = false;
+    } catch (e) { toast(e.message, true); }
+    finally { busy(btn, false); btn.textContent = 'Backtest in database'; }
+  }
+
   // ── logic tab: calculations + leaf decision ────────────────────────
   function calcRow(c, cls) {
     return '<div class="calc-row ' + cls + '"><input class="cn" type="text" placeholder="name" value="' + esc(c.name || '') + '">' +
@@ -1058,6 +1101,8 @@
   $('#btnUnfreeze').onclick = unfreezePd;
   $('#btnCalib').onclick = openCalibration;
   $('#btnCalClose').onclick = function () { $('#calModal').hidden = true; };
+  $('#btnDbBt').onclick = backtestDb;
+  $('#btnDbClose').onclick = function () { $('#dbModal').hidden = true; };
 
   init();
 })();

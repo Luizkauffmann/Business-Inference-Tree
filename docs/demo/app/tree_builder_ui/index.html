@@ -13,6 +13,7 @@
         <label>Non-event margin $<input id="margin" type="number" value="350"></label>
         <label>Event loss $<input id="loss" type="number" value="4200"></label>
       </div>
+      <label>Rows in memory <span class="hint">blank = all rows; or a random sample</span><input id="sampleRows" type="number" min="1000" step="1000" placeholder="all rows"></label>
       <button id="btnLoad" class="primary w">Load population</button>
       <div id="popInfo" class="hint" style="margin-top:6px"></div>
 
@@ -68,6 +69,7 @@
         <button id="btnFit">Fit</button>
         <button id="btnExpand">Expand all</button>
         <button id="btnMetrics">Node metrics…</button>
+        <button id="btnDbBt" title="Run the tree's SQL in the database on the full table and compare the KPIs">Backtest in database</button>
       </div>
     </div>
     <div id="guide" class="tb-guide" hidden></div>
@@ -182,6 +184,12 @@
       <div id="customList"></div>
       <div class="row"><button id="btnAddCustom">+ Custom metric</button><span class="hint">Saved with the strategy and remembered in this browser.</span></div>
       <div class="row" style="justify-content:flex-end"><button id="btnMetricsSave" class="primary">Apply</button></div>
+    </div>
+  </div>
+  <div id="dbModal" class="modal" hidden>
+    <div class="modal-box wide">
+      <div class="row-between"><h3>Backtest in database <span class="hint">full table, computed by the warehouse</span></h3><button id="btnDbClose">✕</button></div>
+      <div id="dbBody"></div>
     </div>
   </div>
   <div id="calModal" class="modal" hidden>

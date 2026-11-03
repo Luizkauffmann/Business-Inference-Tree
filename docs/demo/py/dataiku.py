@@ -47,10 +47,16 @@ class Dataset(object):
     def __init__(self, name):
         self.name = name
 
-    def get_dataframe(self):
+    def get_dataframe(self, sampling="full", limit=None, **_):
         if self.name not in TABLES:
             raise ValueError(f"Dataset '{self.name}' is not loaded.")
-        return TABLES[self.name].copy()
+        d = TABLES[self.name]
+        if sampling == "random" and limit:
+            d = d.sample(n=min(int(limit), len(d)), random_state=42)
+        return d.copy()
+
+    def get_location_info(self):
+        return {"locationInfoType": "BROWSER", "info": {}}   # no SQL database in the browser
 
     def read_schema(self):
         return [{"name": c} for c in TABLES[self.name].columns]

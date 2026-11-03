@@ -121,6 +121,45 @@ Full guide and worked examples: [Logic tab and formula language](logic-and-formu
 - **Tree canvas.** D3 v7 with viewport culling (only visible cards are drawn), memoised cards, collapsible sub-trees and fewer details when zoomed out.
 - **optbinning start-up.** The import is warmed up in the background, so the first optimal split does not wait about a minute.
 
+## Large populations: sample in memory, backtest in database
+
+By default, *Load population* reads **every row into memory** and every edit is recomputed in Python. This is unchanged and is the right choice up to a few hundred thousand rows. For larger tables, two optional tools keep the app interactive without losing the full-population view.
+
+### Rows in memory (sidebar → Population)
+
+- **Blank (default):** all rows in memory, as before.
+- **A number** (e.g. `200000`): a **random sample** of that size is loaded (`get_dataframe(sampling="random", limit=…)`).
+- Relevance, optimal splits, metrics, event rates and calibration then run on the sample. The population line says *random sample loaded*.
+
+### Backtest in database (toolbar)
+
+Runs the tree's **SQL export inside the database** on the **full table** and compares the KPIs with the in-memory population.
+
+**How it works**
+- The SQL (decisions, outputs, frozen leaf event rates) is wrapped in a `GROUP BY tree_leaf, tree_decision` with counts, outcomes and events, and executed by the warehouse (Snowflake, PostgreSQL…) through `SQLExecutor2`.
+- **No rows leave the database**, only the per-leaf summary.
+
+**What the window shows**
+- **Rows, approval / refer / decline / no-decision rates, event rate, event rate approved**, for in memory vs in database and the difference.
+- **Average predicted event rate** (with frozen leaf rates) and **profit**, both in total and per 1,000 rows.
+- **Per leaf:** share and event rate in memory vs in database. This is how you see whether a sample is representative.
+- The **SQL** that was run.
+
+**Notes**
+- **Needs a SQL dataset.** It requires a dataset stored in a SQL database (e.g. a Snowflake or PostgreSQL table). Other datasets get a clear message; nothing else changes.
+- **Leaf event rates.** When leaf formulas use `leaf_event_rate` and the rates are not frozen, the live rates from the loaded rows are embedded in the SQL. Freeze them first for a clean comparison.
+- **Validation.** With all rows in memory, the in-database KPIs equal the in-memory KPIs exactly. With a sample, the database figures equal a full in-memory evaluation of the whole table. Both are checked by `tests/dbbt_test.py` (SQLite as the SQL engine).
+
+![Backtest in database](images/tb_11_db_backtest.png)
+
+### Scaling guidance
+
+| Rows × attributes | Recommendation |
+| --- | --- |
+| up to ~500k × a few hundred | All rows in memory (default) |
+| millions, or 1,000+ attributes | Sample 200k–1M rows for design; **Backtest in database** to validate on the full table; score in production with the SQL export |
+| Memory isolation / several teams | Run the webapp backend in a container (Kubernetes) with sized CPU / memory. The code environment must be built for containers. |
+
 ## Outputs
 
 | Output | Content |

@@ -15,6 +15,7 @@ import json
 import math
 import os
 import threading
+import time
 import traceback
 
 import dataiku
@@ -187,12 +188,17 @@ def register(app):
         b = request.get_json() or {}
         try:
             with _lock:
-                df = dataiku.Dataset(b["dataset"]).get_dataframe()
+                sample_n = b.get("sample_rows")
+                sample_n = int(float(sample_n)) if sample_n not in (None, "", 0, "0") else None
+                ds_ = dataiku.Dataset(b["dataset"])
+                # blank = every row in memory (default); a number = random sample for interactive design
+                df = ds_.get_dataframe(sampling="random", limit=sample_n) if sample_n else ds_.get_dataframe()
+                df = df.reset_index(drop=True)
                 target, score = b.get("target"), b.get("score_col")
                 for k, v in (("target", target), ("score column", score)):
                     if v and v not in df.columns:
                         raise ValueError(f"The {k} '{v}' is not in the dataset.")
-                cfg = dict(dataset=b["dataset"], target=target, score_col=score,
+                cfg = dict(dataset=b["dataset"], target=target, score_col=score, sample_rows=sample_n,
                            margin=float(b["margin"]) if b.get("margin") not in (None, "") else None,
                            loss=float(b["loss"]) if b.get("loss") not in (None, "") else None)
                 y = st.target_array(df, target) if target else None
@@ -513,6 +519,49 @@ def register(app):
                 _, masks, _ = st.evaluate(s["df"], tree, s["cfg"].get("score_col"))
                 pm = st.freeze_pd(tree, masks, s["y"], s["cfg"]["dataset"], s["cfg"].get("target") or "", _browser_user())
                 return ok(pd_model=pm)
+        except (st.TreeError, tx.ExprError) as e:
+            return fail(e, 400)
+        except Exception as e:
+            return fail(e)
+
+    @app.route("/api/backtest_db", methods=["POST"])
+    def api_backtest_db():
+        """Runs the tree's SQL export inside the database on the full table (only aggregates come back)
+        and compares the KPIs with the in-memory population (full or sampled)."""
+        b = request.get_json() or {}
+        try:
+            with _lock:
+                s = need()
+                c, tree = s["cfg"], b["tree"]
+                ds = dataiku.Dataset(c["dataset"])
+                try:
+                    loc = ds.get_location_info() or {}
+                except Exception:
+                    loc = {}
+                info = loc.get("info") or {}
+                table = info.get("quotedResolvedTableName")
+                if loc.get("locationInfoType") != "SQL" or not table:
+                    return fail(f"In-database backtest needs a dataset stored in a SQL database (Snowflake, PostgreSQL…); "
+                                f"'{c['dataset']}' is not. Use the in-memory KPIs instead.", 400)
+                errors = [i for i in st.validate(tree, s["df"].columns, c.get("score_col")) if i["level"] == "error"]
+                if errors:
+                    return fail("Fix the tree first: " + errors[0]["message"], 400)
+                res, masks, _ = st.evaluate_full(s["df"], tree, c.get("score_col"), s["y"], c["dataset"])
+                rates, src = None, None
+                if st.uses_leaf_rates(tree) and st.pd_state(tree) != "frozen":
+                    rates, _, src, _ = st.rate_table(tree, masks, s["y"], c["dataset"])
+                res, _ = st.predict(res, tree, masks, s["y"], c["dataset"])
+                sql = st.backtest_sql(tree, dict(name=(b.get("meta") or {}).get("name"), score_col=c.get("score_col")),
+                                      table, c.get("target"), rates, src)
+                t0 = time.time()
+                db = dataiku.SQLExecutor2(dataset=ds).query_to_df(sql)
+                secs = time.time() - t0
+                mem = st.backtest_groups(res, s["df"], c.get("target"))
+                return ok(db=st.backtest_summary(db, c.get("margin"), c.get("loss")),
+                          mem=st.backtest_summary(mem, c.get("margin"), c.get("loss")),
+                          leaves=st.backtest_leaves(mem, db), sql=sql, seconds=secs, table=table,
+                          sample_rows=c.get("sample_rows"), rows_in_memory=len(s["df"]),
+                          rates_note=src)
         except (st.TreeError, tx.ExprError) as e:
             return fail(e, 400)
         except Exception as e:

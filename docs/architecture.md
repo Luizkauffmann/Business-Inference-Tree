@@ -15,6 +15,7 @@ project library     ▼
 
 - **Pure engines.** `strategy_engine.py` and `strategy_tree.py` are pure pandas / numpy, with no Dataiku import. They are unit-testable and reusable from recipes, scenarios or agent tools.
 - **Webapp modules** add the Dataiku I/O: datasets, managed folders, the Visual ML API and the current user.
+- **Scale.** Large tables can be designed on a random sample and validated in the database: see [Large populations](strategy-tree-builder.md#large-populations-sample-in-memory-backtest-in-database).
 - **State.** Each backend keeps **one loaded population in memory**, shared by every user of that webapp backend. Loading a dataset replaces it. Duplicate the webapp for teams that need separate sessions.
 
 ## Modules
@@ -53,7 +54,7 @@ project library     ▼
 | --- | --- | --- |
 | `/ui` | GET | HTML, CSS and JS of the app |
 | `/api/datasets`, `/api/columns` | GET | Datasets, columns |
-| `/api/load` | POST | Load a population, pre-bin attributes, starter tree |
+| `/api/load` | POST | Load a population (all rows, or `sample_rows` for a random sample), pre-bin attributes, starter tree |
 | `/api/evaluate` | POST | Validate + evaluate: node metrics, summary KPIs, event-rate report (status, calibration, leaf rates) |
 | `/api/relevance` | POST | All attributes ranked for one node |
 | `/api/suggest` | POST | optbinning split of one variable in one node + bin table |
@@ -63,6 +64,7 @@ project library     ▼
 | `/api/binning_configs`, `/api/split_from_config` | GET / POST | Binning v2 configurations as splits |
 | `/api/vml_models`, `/api/vml_import` | GET / POST | Visual ML decision-tree import |
 | `/api/freeze_pd` | POST | Leaf event rates to store in the tree |
+| `/api/backtest_db` | POST | Runs the tree's SQL export in the database on the full table (`SQLExecutor2`); returns in-memory vs in-database KPIs, per-leaf comparison and the SQL |
 | `/api/trees`, `/api/tree`, `/api/save` | GET / POST | Saved trees in `decision_strategies/trees/` (versioned) |
 | `/api/export` | POST | JSON / SQL / Python / Studio |
 | `/api/send_to_studio` | POST | Convert and write to `decision_strategies/strategies/` (asks for confirmation when simplified) |
