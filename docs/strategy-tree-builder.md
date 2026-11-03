@@ -37,7 +37,7 @@ Strategy Tree Builder (shown in Dataiku as *Business Inferencing Tree*) combines
 1. **Select a node.** All attributes are ranked for the rows in that node.
    - **Search** is debounced.
    - **Hide flagged** removes attributes flagged as outcome-window, ID-like, constant, date, decision-output or suspicious.
-2. **Click an attribute.** **optbinning** (constraint-programming solver) finds the optimal multi-way split *inside that node*. Options:
+2. **Click an attribute.** **optbinning** (constraint-programming solver) finds the optimal multi-way split *inside that node*. Without optbinning (e.g. in the browser demo), an exact dynamic-programming binning is used instead. Options:
    - *Max branches* (2–12) and *Min branch %*;
    - *Trend*: auto, ascending, descending, peak, valley or none;
    - *Missing*: auto (own branch when ≥ 2 % of known rows are missing), own branch, similar risk or worst risk.

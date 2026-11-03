@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%230f766e%27/%3E%3Cpath d=%27M16 7v6M16 13l-7 6M16 13l7 6M9 19v6M23 19v6%27 stroke=%27white%27 stroke-width=%273%27 fill=%27none%27 stroke-linecap=%27round%27/%3E%3C/svg%3E">
+<title>Strategy Tree Builder · Business Inference Tree demo</title>
+<link rel="stylesheet" href="demo.css">
+</head>
+<body>
+<div class="bit-bar">
+  <span class="brand">Business Inference Tree<small>live demo · personal open-source project by Luiz Kauffmann</small></span>
+  <nav><a href="tree.html" class="on">Strategy Tree Builder</a><a href="studio.html">Strategy Studio</a><a href="index.html">About &amp; data</a><a href="https://github.com/Luizkauffmann/Business-Inference-Tree">GitHub</a></nav>
+  <span class="data"><button id="bitSample" title="Credit card default sample (UCI, CC BY 4.0)">Sample data</button><label class="up" title="Any CSV with a 0/1 target">Upload CSV<input id="bitUpload" type="file" accept=".csv,text/csv"></label><span id="bitStatus" class="bit-status"></span></span>
+</div>
+<div id="root"><div id="bitLoading"><div class="spin"></div><div class="msg">Starting…</div></div></div>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script src="runtime.js"></script>
+<script>BIT.start({ defaults: { '#margin': 600, '#loss': 2400 }, app: 'tree', module: 'tree_builder_webapp', files: ['py/dataiku.py', 'py/flask.py', 'py/demo_backend.py', 'app/binning_output.py', 'app/tree_expr.py', 'app/strategy_tree.py', 'app/tree_builder_webapp.py', 'app/tree_builder_ui/index.html', 'app/tree_builder_ui/app.css', 'app/tree_builder_ui/app.js'] });</script>
+</body>
+</html>

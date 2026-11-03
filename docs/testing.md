@@ -27,6 +27,8 @@ It uses `uv` by default. To use another interpreter, set `PY="python"` with the 
 | `bins_test.py` (browser) | Bin table, multi-select merge (adjacent rule), split bin, edit boundary (valid range), missing routing, undo, full table, editing an existing split while keeping sub-trees, categorical merge / move, rule merge |
 | `pd_ui_test.py` (browser) | KPI and status, leaf event-rate box and card metric, credibility 0, freeze with holdout, calibration, prediction columns in the written dataset, saved frozen rates, stale after editing a cut |
 | `outputs_ui_test.py` (browser) | Default outputs on the root, inherited-outputs hint, decision-output picker, segment-only leaf, card chips, no-decision KPI, output columns in the written dataset, SQL export with outputs |
+| `dp_test.py` | Dynamic-programming binning (used without optbinning) against optbinning on the same variables: splits, IV, timing |
+| `demo_browser_test.py` (browser, needs internet for Pyodide) | The GitHub Pages demo end to end: boot in the browser, sample pre-selected, load, DP split, default output, freeze + calibration, SQL export and CSV download, CSV upload, *Send to Studio* reaching Strategy Studio, DMN export |
 | `ss_shots.py` (browser) | Loads Strategy Studio, renders the tree, backtest and exports, and saves the screenshots used in the docs |
 
 ## Synthetic data

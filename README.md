@@ -11,6 +11,15 @@ Two Dataiku webapps for building **credit strategy trees**, the decision trees r
 
 ![Strategy Tree Builder](docs/images/tb_7_rules.png)
 
+## Live demo – no install, runs in your browser
+
+**▶ [luizkauffmann.github.io/Business-Inference-Tree](https://luizkauffmann.github.io/Business-Inference-Tree/)**
+
+- **No server.** Both apps run fully client-side: the same Python code runs in [Pyodide](https://pyodide.org) (WebAssembly), so uploaded data never leaves your browser.
+- **Sample data.** It comes with a public credit-risk sample: the UCI *Default of Credit Card Clients* dataset (30,000 customers, CC BY 4.0).
+- **Your own data.** The app is agnostic: **Upload CSV** works with any file that has a 0/1 target.
+- **Details:** [demo page](docs/demo/index.html) and [how the demo works](docs/architecture.md#browser-demo-github-pages).
+
 ## Documentation
 
 | Guide | Contents |
@@ -59,6 +68,8 @@ src/strategy_studio/         strategy_engine.py, engine_examples.py, strategy_we
 src/strategy_tree_builder/   strategy_tree.py, tree_expr.py, tree_builder_webapp.py, tree_builder_ui/
 src/common/                  binning_output.py (writes output datasets on the input's connection)
 webapp_shells/               the HTML / CSS / JS / Python tabs of each Dataiku webapp
+docs/demo/                   browser demo (GitHub Pages): Pyodide runtime, sample data, copy of src/ (demo/tools/build_demo.sh)
+demo/tools/                  build_demo.sh, prepare_uci_credit.py (builds the sample CSV from the UCI file)
 tests/                       synthetic data generator, engine tests, Playwright browser tests
 docs/                        guides and screenshots
 ```

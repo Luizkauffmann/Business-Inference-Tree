@@ -1,0 +1,180 @@
+<div class="ss">
+  <aside class="ss-side">
+    <div class="logo">
+      <div class="logo-icon">SS</div>
+      <div><div class="logo-title">Strategy Studio</div><div class="logo-sub">Decision trees &middot; InterConnect</div></div>
+    </div>
+
+    <div class="side-body">
+      <div class="sec">Population</div>
+      <label>Scored dataset<select id="ds"><option>Loading…</option></select></label>
+      <label>Score column<select id="scoreCol"></select></label>
+      <label>Target (1 = bad) <span class="hint">optional, for backtest</span><select id="target"></select></label>
+      <button id="btnLoad" class="primary w">Load population</button>
+      <div id="popChips" class="chips"></div>
+
+      <div class="sec">Economics <span class="hint">per loan</span></div>
+      <div class="grid2">
+        <label>Margin / good ($)<input id="margin" type="number" step="10" min="0"></label>
+        <label>Loss / bad ($)<input id="loss" type="number" step="50" min="0"></label>
+      </div>
+      <label>Baseline score cut-off<input id="baseline" type="number" step="1"></label>
+
+      <div class="sec row-between">Strategies <button id="btnNew" class="mini">+ New</button></div>
+      <div id="newMenu" class="menu" hidden>
+        <button data-tpl="delinquency_override">Score + delinquency override</button>
+        <button data-tpl="cutoff_only">Score cut-off only</button>
+      </div>
+      <div id="stratList" class="strat-list"><div class="hint">Load a population to see saved strategies.</div></div>
+    </div>
+
+    <div class="side-foot">
+      <button id="btnSaveVersion" class="primary w">Save new version</button>
+      <button id="btnRunBacktest" class="success w">Run backtest &rarr;</button>
+      <button id="btnGoExport" class="ghost w">Export &amp; Deploy</button>
+    </div>
+  </aside>
+
+  <main class="ss-main">
+    <div class="hdr">
+      <label class="grow">Strategy name<input id="stName" type="text"></label>
+      <label>Strategy ID<input id="stId" type="text" style="width:140px"></label>
+      <label>Status<select id="stStatus">
+        <option value="DRAFT">DRAFT</option><option value="CHAMPION">CHAMPION</option><option value="CHALLENGER">CHALLENGER</option>
+      </select></label>
+      <span id="stVersion" class="badge">v1</span>
+      <button id="btnValidate" class="primary">Validate</button>
+      <button id="btnSave">Save</button>
+    </div>
+
+    <nav class="tabs">
+      <button data-tab="tree" class="active">Tree Builder</button>
+      <button data-tab="backtest">Backtest</button>
+      <button data-tab="export">Export &amp; Deploy</button>
+    </nav>
+
+    <div id="empty" class="empty">Load a scored population (the dataset written by Scorecard_Scalling_Opt) to start building a strategy.</div>
+
+    <div id="work" hidden>
+      <div id="kpis" class="kpis"></div>
+      <div id="issues"></div>
+
+      <!-- TREE BUILDER -->
+      <div class="tab" id="tab-tree">
+        <div class="tree-grid">
+          <div class="card tree-card">
+            <div class="card-head">
+              <h3>Decision tree</h3>
+              <span class="hint">Click a node to edit &middot; edges: <b class="yes">yes</b> / <b class="no">no</b></span>
+              <span class="legend"><i class="lg approve"></i>Approve <i class="lg refer"></i>Refer <i class="lg decline"></i>Decline <i class="lg cut"></i>Cut-off</span>
+            </div>
+            <div id="treeWrap" class="tree-wrap"></div>
+          </div>
+          <div class="right-col">
+            <div class="card"><div id="editor"></div></div>
+            <div class="card json-card">
+              <div class="json-tabs">
+                <button data-jt="gen" class="active">Generated JSON</button>
+                <button data-jt="adv">Advanced JSON</button>
+                <select id="jsonFormat">
+                  <option value="interconnect">Equifax InterConnect</option>
+                  <option value="powercurve">Experian PowerCurve</option>
+                  <option value="fico">FICO Platform (mock)</option>
+                  <option value="generic">Generic JSON</option>
+                </select>
+              </div>
+              <pre id="jsonGen" class="code"></pre>
+              <textarea id="jsonAdv" class="code" spellcheck="false" hidden></textarea>
+              <div class="row">
+                <button id="btnCopyJson">Copy JSON</button>
+                <button id="btnApplyAdv" hidden>Apply advanced JSON</button>
+                <span class="hint" id="jsonNote"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BACKTEST -->
+      <div class="tab" id="tab-backtest" hidden>
+        <div class="card">
+          <h3>Strategy vs baseline <span class="hint" id="btBaselineNote"></span></h3>
+          <div class="scroll"><table id="btCompare" class="tbl"></table></div>
+        </div>
+        <div class="card">
+          <h3>Outcomes by leaf</h3>
+          <div class="scroll"><table id="btLeaves" class="tbl"></table></div>
+        </div>
+        <div class="card">
+          <h3>Champion vs challenger</h3>
+          <div class="row wrap">
+            <label class="inline">Champion<select id="cmpChamp"></select></label>
+            <label class="inline">Challenger<select id="cmpChal"></select></label>
+            <button id="btnCompare" class="primary">Compare</button>
+          </div>
+          <div id="cmpOut"></div>
+        </div>
+      </div>
+
+      <!-- EXPORT & DEPLOY -->
+      <div class="tab" id="tab-export" hidden>
+        <div class="exp-grid">
+          <div class="card">
+            <h3>Export</h3>
+            <div class="row wrap">
+              <label class="inline">Target<select id="expFormat">
+                <option value="interconnect">Equifax InterConnect (illustrative schema)</option>
+                <option value="powercurve">Experian PowerCurve Strategy Management (illustrative schema)</option>
+                <option value="fico">FICO Platform decision tree (mock)</option>
+                <option value="generic">Generic strategy JSON</option>
+                <option value="sql">SQL CASE expressions</option>
+                <option value="python">Python function</option>
+                <optgroup label="Other decision engines (examples)">
+                  <option value="oscilar">Oscilar workflow rules (example)</option>
+                  <option value="pega">Pega decision table (example)</option>
+                  <option value="provenir">Provenir decision tree (example)</option>
+                  <option value="taktile">Taktile decision flow (example)</option>
+                  <option value="dmn">DMN 1.3 decision table (standard XML)</option>
+                </optgroup>
+              </select></label>
+              <label class="inline">File name<input id="expName" type="text" style="width:220px"></label>
+            </div>
+            <div class="row">
+              <button id="btnSaveExport" class="primary">Save to folder</button>
+              <button id="btnDownload">Download</button>
+              <span class="hint" id="expNote"></span>
+            </div>
+            <pre id="expPreview" class="code tall"></pre>
+          </div>
+          <div class="right-col">
+            <div class="card deploy-card">
+              <h3>Deploy to Equifax InterConnect <span class="sim">SIMULATED</span></h3>
+              <p class="hint">Validates the strategy, packages it in the InterConnect-style schema with its backtest
+                summary and checksum, and stores the package and a deployment receipt in the
+                <b>decision_strategies</b> folder. No external system is called in this demo.</p>
+              <div class="row wrap">
+                <label class="inline">Environment<select id="depEnv">
+                  <option>Sandbox</option><option selected>UAT</option><option>Production</option></select></label>
+                <button id="btnDeploy" class="success">Deploy to InterConnect</button>
+              </div>
+              <div id="receipt"></div>
+            </div>
+            <div class="card">
+              <h3>Deployment history</h3>
+              <div class="scroll"><table id="depHistory" class="tbl"></table></div>
+            </div>
+            <div class="card">
+              <h3>Decisioned dataset</h3>
+              <p class="hint">Writes every row with its leaf, adjusted score, decision, reason codes, pricing tier and
+                limit multiplier to a Flow dataset on the input's connection.</p>
+              <label>Dataset name<input id="outName" type="text"></label>
+              <button id="btnWriteDs" class="primary">Write decisioned dataset</button>
+              <p class="hint" id="writeNote"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <div id="toast" class="toast" hidden></div>
+</div>

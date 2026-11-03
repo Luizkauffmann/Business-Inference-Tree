@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%230f766e%27/%3E%3Cpath d=%27M16 7v6M16 13l-7 6M16 13l7 6M9 19v6M23 19v6%27 stroke=%27white%27 stroke-width=%273%27 fill=%27none%27 stroke-linecap=%27round%27/%3E%3C/svg%3E">
+<title>Business Inference Tree · Live demo</title>
+<style>
+  :root { --ink: #1d2733; --muted: #5f6b7a; --line: #dfe5ea; --acc: #0f766e; --bg: #f6f8f9; --card: #fff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { background: #12312d; color: #e8f2f0; padding: 36px 16px 30px; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; }
+  header h1 { margin: 0 0 6px; font-size: 28px; }
+  header p { margin: 0; opacity: .85; max-width: 760px; }
+  .tag { display: inline-block; margin-top: 12px; font-size: 12px; background: rgba(255, 255, 255, .12); padding: 3px 10px; border-radius: 12px; }
+  main { padding: 26px 0 50px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; }
+  .card h2 { margin: 0 0 6px; font-size: 19px; }
+  .card p { margin: 0 0 14px; color: var(--muted); flex: 1; }
+  .btn { align-self: flex-start; background: var(--acc); color: #fff; text-decoration: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; }
+  h3 { margin: 28px 0 8px; font-size: 17px; }
+  ol, ul { margin: 0; padding-left: 20px; }
+  li { margin: 3px 0; }
+  code { background: #eaf0ee; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  .note { background: #fff8e6; border: 1px solid #f0dca8; border-radius: 10px; padding: 12px 16px; margin-top: 22px; font-size: 14px; }
+  footer { border-top: 1px solid var(--line); padding: 18px 0 30px; color: var(--muted); font-size: 13px; }
+  a { color: var(--acc); }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>Business Inference Tree</h1>
+    <p>Credit strategy trees in your browser: optimal-binning splits, business logic in the nodes, several outputs per leaf (decision, pricing, segment), leaf event-rate prediction with calibration, and exports to SQL, Python and decision engines.</p>
+    <span class="tag">Personal open-source project by Luiz Kauffmann · Apache 2.0 · not affiliated with any vendor</span>
+  </div>
+</header>
+<main class="wrap">
+  <div class="cards">
+    <div class="card">
+      <h2>Strategy Tree Builder</h2>
+      <p>Rank attributes per node, split with optimal binning, override bins (merge, edit boundaries, split), add calculations and rule splits, define decisions and pricing per leaf, freeze leaf event rates and check calibration.</p>
+      <a class="btn" href="tree.html">Open the Tree Builder</a>
+    </div>
+    <div class="card">
+      <h2>Strategy Studio</h2>
+      <p>Hand-build binary strategy trees on a score, backtest them against a baseline, compare champion and challenger with the swap set, and export to SQL, Python, DMN 1.3 or illustrative decision-engine formats.</p>
+      <a class="btn" href="studio.html">Open Strategy Studio</a>
+    </div>
+  </div>
+
+  <h3>How it works</h3>
+  <ul>
+    <li><b>Runs entirely in your browser.</b> The app's Python engine runs in <a href="https://pyodide.org">Pyodide</a> (Python compiled to WebAssembly). There is no server: uploaded data never leaves the page.</li>
+    <li><b>First visit:</b> it downloads Python, numpy and pandas (about 15 MB, then cached). Startup takes 10–30 seconds.</li>
+    <li><b>Agnostic to the data.</b> Click <b>Upload CSV</b> and use any file with a 0/1 target (1 = the event: default, fraud, churn, repayment…) and, ideally, a score column.</li>
+    <li><b>Saved trees and strategies</b> are kept in this browser (localStorage). <i>Send to Studio</i> in the Tree Builder makes the strategy appear in Strategy Studio.</li>
+    <li><b>Written datasets</b> (<i>Write decisions dataset</i>) are downloaded as CSV files.</li>
+    <li><b>Optimal splits</b> use an exact dynamic-programming binning (IV-maximising, with minimum bin size and monotonic trend). The installed version can use the <code>optbinning</code> library instead.</li>
+    <li><b>Not in the demo:</b> Visual ML model import, which needs a Dataiku project.</li>
+  </ul>
+
+  <h3>Try it in two minutes</h3>
+  <ol>
+    <li>Open the <a href="tree.html">Tree Builder</a>. The sample is pre-selected, with target <code>default_next_month</code> and score <code>behaviour_score</code>. Click <b>Load population</b>.</li>
+    <li>Click the top-ranked attribute (e.g. <code>pay_status_m1</code>) and then <b>Apply split</b>. Refine the bins in <b>Bin statistics</b>.</li>
+    <li>Select the root → <b>Logic</b> → <b>Default outputs</b>: add <code>apr</code> = <code>round(0.12 + 0.5 * leaf_event_rate, 4)</code> and click <b>Apply logic</b>.</li>
+    <li>On a leaf, set <b>Decision = from an output…</b> with <code>credit_decision</code> = <code>'APPROVE' if leaf_event_rate &lt; 0.15 else 'DECLINE'</code>.</li>
+    <li>Set Holdout % = 30, click <b>Freeze leaf rates</b>, open <b>Calibration…</b>, then <b>Download</b> the SQL export.</li>
+  </ol>
+
+  <h3>Sample data</h3>
+  <p>
+    <b>Default of Credit Card Clients</b>: 30,000 credit-card customers in Taiwan (2005) with a <i>default next month</i> flag (22.1 % events).
+    Yeh, I-C. &amp; Lien, C-H. (2009), <i>Expert Systems with Applications</i> 36(2).
+    <a href="https://doi.org/10.24432/C55S3H">UCI Machine Learning Repository</a>,
+    licensed <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
+  </p>
+  <p>Changes made for this demo:</p>
+  <ul>
+    <li>readable column names; months labelled <code>m1</code> (most recent) … <code>m6</code>;</li>
+    <li>sex, marital status and age removed;</li>
+    <li>education decoded to labels;</li>
+    <li>derived features added (utilisation, delinquency counts, payment ratio);</li>
+    <li>a 50/50 <code>sample</code> column (development / validation);</li>
+    <li><code>behaviour_score</code>, a simple logistic scorecard fitted on the development half (600 points at 50:1 odds, 20 points to double the odds).</li>
+  </ul>
+  <p>The script is <a href="https://github.com/Luizkauffmann/Business-Inference-Tree/blob/main/demo/tools/prepare_uci_credit.py">demo/tools/prepare_uci_credit.py</a>.</p>
+
+  <div class="note"><b>Demo only.</b> The sample data and <code>behaviour_score</code> are for illustration and are not a validated credit model. Nothing here is financial, credit-risk or regulatory advice.</div>
+</main>
+<footer>
+  <div class="wrap">© 2026 Luiz Kauffmann · <a href="https://github.com/Luizkauffmann/Business-Inference-Tree">Source on GitHub</a> (Apache 2.0) · Personal project, not affiliated with, endorsed by or supported by Dataiku or any other company. All trademarks belong to their owners.</div>
+</footer>
+</body>
+</html>

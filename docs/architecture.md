@@ -150,3 +150,32 @@ Saved document (`trees/<NAME>.json`): `{type: "dataiku_strategy_tree_v2", meta, 
    - *suspicious*: IV ≥ 2.
 
    Flagged attributes are hidden by default (*Hide flagged*). Outcome-window, ID-like and constant attributes are also left out of the guided next splits.
+
+## Browser demo (GitHub Pages)
+
+`docs/demo/` runs **both webapps without Dataiku or a server**:
+
+```
+tree.html / studio.html ── runtime.js ── Pyodide (Python + numpy + pandas in WebAssembly)
+                               │            ├─ the unchanged webapp backends + engines (docs/demo/app = copy of src/)
+   UI fetch('py:/api/…') ──────┘            └─ docs/demo/py: stand-ins for `dataiku` and `flask`, request router
+```
+
+**The pieces**
+- `runtime.js`:
+  - boots Pyodide and writes the app files into its virtual file system;
+  - registers the backend routes;
+  - redirects the UI's backend calls (`dataiku.getWebAppBackendUrl` + `fetch`) to the Python router.
+- `py/dataiku.py`:
+  - **datasets** are pandas DataFrames in memory: the bundled sample plus uploaded CSVs;
+  - **managed folders** (trees, strategies, exports) are kept in the browser's `localStorage`, so *Send to Studio* reaches Strategy Studio;
+  - **written datasets** are handed to the user as CSV downloads;
+  - the **Visual ML catalogue** is empty.
+- `py/flask.py` and `py/demo_backend.py`:
+  - `request` / `jsonify` and a route table;
+  - Pyodide has no threads, so background warm-ups run inline.
+- **Optimal splits:** `optbinning` (OR-Tools) is not available in Pyodide, so `suggest_split` uses `_dp_splits`. This is an exact dynamic programme on ≤ 50 pre-bins: the grouping into ≤ N bins with the highest IV, minimum bin share, and monotonic trend for numeric variables. In tests it reaches about 97 % of optbinning's IV in about 10 ms. The same fallback is used by any installation without optbinning.
+
+**Rebuild and publish**
+1. After changing `src/`, run `demo/tools/build_demo.sh`.
+2. GitHub Pages serves `docs/` from `main`; `docs/index.html` redirects to the demo.

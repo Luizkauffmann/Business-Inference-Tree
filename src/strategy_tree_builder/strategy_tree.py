@@ -930,8 +930,8 @@ def suggest_split(x, y, kind=None, max_bins=4, min_share=0.05, monotonic="auto",
         ob.fit(xs, yk)
         splits = ob.splits
     except ImportError:
-        method = "tree (optbinning not installed)"
-        splits = _tree_splits(xk, yk, numeric, max_bins, min_share)
+        method = "optimal binning (dynamic programming; optbinning not installed)"
+        splits = _dp_splits(xk, yk, numeric, max_bins, min_share, monotonic)
     if numeric:
         cuts = sorted(float(c) for c in np.atleast_1d(splits))
         if not cuts:
@@ -944,9 +944,99 @@ def suggest_split(x, y, kind=None, max_bins=4, min_share=0.05, monotonic="auto",
         split = {"kind": "categorical", "variable": str(x.name), "groups": groups}
         _assign_other(split, x, y)
     _assign_missing(split, x, y, missing)
-    split["source"] = "optbinning" if method == "optbinning" else "tree"
+    split["source"] = "optbinning" if method == "optbinning" else "dp"
     split["method"] = method
     return split
+
+
+def _dp_splits(xk, yk, numeric, max_bins, min_share, monotonic="auto", max_prebins=50):
+    """Optimal binning without optbinning (pure numpy, e.g. in the browser).
+
+    The variable is pre-binned (<= 50 quantile bins, or categories ordered by event rate),
+    then dynamic programming finds the contiguous grouping into <= max_bins groups with the
+    highest IV, every group holding >= min_share of the rows, and – for numeric variables –
+    a monotonic event rate (ascending, descending, or the better of both for "auto").
+    Exact for the given pre-bins. Returns cuts (numeric) or category groups.
+    """
+    if numeric:
+        xv = pd.to_numeric(xk, errors="coerce").values.astype(float)
+        ok = ~np.isnan(xv)
+        xv, yv = xv[ok], yk[ok]
+        if not len(xv):
+            return []
+        u = np.unique(xv)
+        edges = (u[1:] + u[:-1]) / 2 if len(u) <= max_prebins else \
+            np.unique(np.quantile(xv, np.linspace(0, 1, max_prebins + 1)[1:-1]))
+        code = np.searchsorted(edges, xv, side="right")
+        P = len(edges) + 1
+    else:
+        sv = pd.Series(np.asarray(xk, dtype=object)).where(pd.notna(pd.Series(np.asarray(xk, dtype=object))), None)
+        ok = sv.notna().values
+        sv, yv = sv[ok].astype(str), yk[ok]
+        top = sv.value_counts().index[:max_prebins]
+        sv = sv[sv.isin(top)]
+        yv = yv[sv.index.values] if len(sv) else yv[:0]
+        rates = pd.Series(yv, index=sv.values).groupby(level=0).mean().sort_values()
+        cats = list(rates.index)
+        code = pd.Series(range(len(cats)), index=cats)[sv.values].values
+        P = len(cats)
+    if P < 2:
+        return []
+    n = np.bincount(code, minlength=P).astype(float)
+    e = np.bincount(code, weights=yv.astype(float), minlength=P)
+    cn, ce = np.r_[0, np.cumsum(n)], np.r_[0, np.cumsum(e)]
+    N, E = cn[-1], ce[-1]
+    G = N - E
+    if E == 0 or G == 0:
+        return []
+    min_n = max(1.0, float(min_share) * N)
+
+    def seg(i, j):  # pre-bins i..j inclusive -> (rows, event rate, IV contribution)
+        nn, ee = cn[j + 1] - cn[i], ce[j + 1] - ce[i]
+        de, dg = (ee + 0.5) / (E + 0.5), (nn - ee + 0.5) / (G + 0.5)
+        return nn, ee / nn if nn else 0.0, (de - dg) * math.log(de / dg)
+
+    S = {(i, j): seg(i, j) for i in range(P) for j in range(i, P)}
+
+    def solve(trend):
+        # best[k][(i, j)] = (IV, previous segment) for k groups covering pre-bins 0..j, the last one i..j
+        best = [dict() for _ in range(max_bins + 1)]
+        for j in range(P):
+            if S[(0, j)][0] >= min_n:
+                best[1][(0, j)] = (S[(0, j)][2], None)
+        for k in range(2, max_bins + 1):
+            for (h, i0), (val, _) in best[k - 1].items():
+                r_prev = S[(h, i0)][1]
+                for j in range(i0 + 1, P):
+                    nn, r, iv = S[(i0 + 1, j)]
+                    if nn < min_n:
+                        continue
+                    if (trend == "ascending" and r <= r_prev) or (trend == "descending" and r >= r_prev):
+                        continue
+                    key = (i0 + 1, j)
+                    if key not in best[k] or best[k][key][0] < val + iv:
+                        best[k][key] = (val + iv, (h, i0))
+        cands = [(best[k][(i, P - 1)][0], k, i) for k in range(2, max_bins + 1)
+                 for i in range(P) if (i, P - 1) in best[k]]
+        if not cands:
+            return None
+        val, k, i = max(cands)
+        segs, key = [], (i, P - 1)
+        while k >= 1 and key is not None:
+            segs.append(key)
+            key = best[k][key][1]
+            k -= 1
+        return val, sorted(segs)
+
+    trends = (["none"] if not numeric or monotonic in ("none", "peak", "valley", None, "")
+              else ["ascending", "descending"] if monotonic == "auto" else [monotonic])
+    sols = [r for r in (solve(t) for t in trends) if r]
+    if not sols:
+        return []
+    segs = max(sols)[1]
+    if numeric:
+        return [float(edges[j]) for (_, j) in segs[:-1]]
+    return [[cats[c] for c in range(i, j + 1)] for (i, j) in segs]
 
 
 def _tree_splits(xk, yk, numeric, max_bins, min_share):
