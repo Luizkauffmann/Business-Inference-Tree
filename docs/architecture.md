@@ -97,7 +97,7 @@ Saved document (`strategies/<NAME>.json`): `{meta: {name, strategy_id, status, v
            "missing_branch": 0, "source": "optbinning"},
  "children": [
    {"id": "n2", "name": "vantage_score < 643.5", "calcs": [], "split": null, "children": [],
-    "leaf": {"mode": "cutoff", "score_expr": "adj_score", "approve_at": 760, "refer_at": 740,
+    "leaf": {"mode": "cutoff", "score_expr": "adj_score", "approve_at": 760, "refer_at": 740, "decision_output": null,
              "reason_codes": ["LOW_SCORE"], "pricing_tier": "C", "limit_expr": "0.8",
              "outputs": [{"name": "apr", "expr": "0.199 if vantage_score < 640 else 0.149"}]}}]}
 ```
@@ -113,7 +113,14 @@ Saved document (`strategies/<NAME>.json`): `{meta: {name, strategy_id, status, v
 - **Missing values**: `missing_branch` (index) or `missing_separate: true`, which adds a last *Missing* branch.
 - **`source`**: `manual | optbinning | tree | binning_config:<name> | visual_ml`.
 
+**Leaf `mode`**: `cutoff | approve | refer | decline | output | none`. With `output`, `decision_output` names the output whose value becomes `tree_decision`; `none` leaves it empty.
+
+**Leaf formulas** can also read `leaf_id`, `leaf_event_rate`, `leaf_event_rate_raw`, `leaf_n_known` (exposed by `Env.ctx`), plus `leaf_score`, `leaf_decision` and the leaf's earlier outputs (outputs and limit only).
+- Evaluation order: score → decision → leaf outputs → default outputs → limit.
+- When a formula reads the leaf rates, `evaluate_full()` runs two passes. Routing does not depend on leaf formulas, so both passes see the same leaves.
+
 **Tree root options**
+- `default_outputs`: `[{name, expr}]`, evaluated in every leaf after its own outputs; a leaf output with the same name overrides.
 - `pd_settings`: `{credibility, threshold, holdout_pct, seed}`.
 - `pd_model` (frozen leaf rates): `{status, frozen_at, frozen_by, dataset, target, n_known, base_rate, credibility, threshold, holdout_pct, seed, signature, leaves: {leaf_id: {n_known, bads, raw, pd, lower, upper}}}`.
 

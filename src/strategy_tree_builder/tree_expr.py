@@ -287,8 +287,10 @@ def _call(fn, args, env, idx):
         if len(vals) != 3:
             raise ExprError("clip(x, low, high) takes 3 arguments.")
         return _num(_series(vals[0], idx)).clip(lower=vals[1], upper=vals[2])
-    if fn == "round":
-        return _num(_series(vals[0], idx)).round(int(vals[1]) if len(vals) > 1 else 0)
+    if fn == "round":   # half away from zero, like SQL ROUND
+        f = 10.0 ** (int(vals[1]) if len(vals) > 1 else 0)
+        x = _num(_series(vals[0], idx))
+        return np.sign(x) * np.floor(x.abs() * f + 0.5 + 1e-9) / f
     x = _num(_series(vals[0], idx))
     with np.errstate(all="ignore"):
         r = {"abs": np.abs, "floor": np.floor, "ceil": np.ceil, "log": np.log, "exp": np.exp, "sqrt": np.sqrt}[fn](x)
@@ -442,8 +444,11 @@ def _f(fn, *a):
         return next((x for x in a if not _m(x)), None)
     if fn == "clip":
         return None if vals[0] is None else min(max(vals[0], vals[1]), vals[2])
-    if fn == "round":
-        return None if vals[0] is None else round(vals[0], int(vals[1]) if len(vals) > 1 else 0)
+    if fn == "round":   # half away from zero, like SQL ROUND
+        if vals[0] is None:
+            return None
+        f = 10.0 ** (int(vals[1]) if len(vals) > 1 else 0)
+        return math.copysign(math.floor(abs(vals[0]) * f + 0.5 + 1e-9) / f, vals[0])
     x = vals[0]
     if x is None:
         return None

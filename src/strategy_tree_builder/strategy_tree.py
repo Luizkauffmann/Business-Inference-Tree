@@ -11,10 +11,16 @@ Node
                                           usable by every descendant (splits, leaves, metrics)
    "split": null | split,                 null = leaf
    "children": [node, ...],               one per branch
-   "leaf": {"mode": "approve" | "refer" | "decline" | "cutoff",
+   "leaf": {"mode": "approve" | "refer" | "decline" | "cutoff" | "none" | "output",
             "score_expr", "approve_at", "refer_at",        cutoff: score formula vs cut-offs
+            "decision_output",                            output: name of the output holding the decision
             "reason_codes": [..], "pricing_tier", "limit_expr",
             "outputs": [{"name", "expr"}]}}               extra leaf outputs (formulas)
+  The root may carry "default_outputs": [{"name", "expr"}], evaluated in every leaf unless the
+  leaf defines an output with the same name. Leaf formulas can read leaf_id, leaf_event_rate,
+  leaf_event_rate_raw, leaf_n_known, leaf_score, leaf_decision and the leaf's earlier outputs.
+  Order in a leaf: score -> decision (cut-off / fixed) -> leaf outputs -> default outputs ->
+  credit-limit formula; with a decision from an output, leaf_decision exists from that output on.
 
 Split kinds (any number of branches per node, any variable – including a calculation):
   numeric      {"kind": "numeric", "variable", "cuts": [c1..ck]}        k+1 branches:
@@ -41,7 +47,10 @@ import pandas as pd
 
 import tree_expr as tx
 
-LEAF_MODES = ("approve", "refer", "decline", "cutoff")
+LEAF_MODES = ("approve", "refer", "decline", "cutoff", "none", "output")
+# Leaf values usable in leaf formulas (score formula: the first four only).
+LEAF_CONTEXT = ("leaf_id", "leaf_event_rate", "leaf_event_rate_raw", "leaf_n_known", "leaf_score", "leaf_decision")
+LEAF_RATE_NAMES = ("leaf_event_rate", "leaf_event_rate_raw", "leaf_n_known")
 DECISIONS = ("APPROVE", "REFER", "DECLINE")
 MISS_CODE, OTHER_CODE, K = 31, 30, 32
 DEFAULT_METRICS = ["n", "share", "bad_rate", "gini", "entropy", "dominant", "split"]
@@ -157,9 +166,27 @@ def describe_split(split):
     return f"{split['variable']} → {n_branches(split)} branches"
 
 
+def leaf_outputs(tree, leaf):
+    """Outputs of a leaf, in evaluation order: the leaf's own outputs first, then the root's
+    default outputs it does not override (so defaults such as pricing can read the leaf's decision)."""
+    own = [o for o in (leaf.get("outputs") or []) if o.get("name")]
+    names_ = {o["name"] for o in own}
+    return own + [o for o in (tree.get("default_outputs") or []) if o.get("name") and o["name"] not in names_]
+
+
+def _as_decision(v):
+    if v is None or (isinstance(v, float) and math.isnan(v)):
+        return "REFER"
+    return str(v).strip().upper()
+
+
 def describe_leaf(leaf):
     m = leaf.get("mode", "cutoff")
-    if m != "cutoff":
+    if m == "none":
+        txt = "no decision (segment)"
+    elif m == "output":
+        txt = f"decision = output {leaf.get('decision_output') or '?'}"
+    elif m != "cutoff":
         txt = m.upper()
     else:
         txt = f"{leaf.get('score_expr') or 'score'} ≥ {_fmt(leaf.get('approve_at'))} approve"
@@ -245,21 +272,34 @@ def validate(tree, columns, default_score=None):
             mode = lf.get("mode", "cutoff")
             if mode not in LEAF_MODES:
                 add(n, "error", f"Unknown leaf decision '{mode}'.")
+            score_known = known | {"leaf_id"} | set(LEAF_RATE_NAMES)
+            if lf.get("score_expr"):
+                check_expr(n, lf["score_expr"], score_known, "Score")
             if mode == "cutoff":
                 expr = lf.get("score_expr") or default_score
                 if not expr:
                     add(n, "error", "Set the score formula for the cut-off.")
-                else:
-                    check_expr(n, expr, known, "Score")
+                elif not lf.get("score_expr"):
+                    check_expr(n, expr, score_known, "Score")
                 aa, ra = _num(lf.get("approve_at")), _num(lf.get("refer_at"))
                 if aa is None:
                     add(n, "error", "Set the approve cut-off.")
                 if aa is not None and ra is not None and ra > aa:
                     add(n, "error", "Refer cut-off must be below the approve cut-off.")
+            out_known = score_known | {"leaf_score"} | ({"leaf_decision"} if mode != "output" else set())
+            names_ = []
+            for o in leaf_outputs(tree, lf):
+                if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", o.get("name") or ""):
+                    add(n, "error", f"Output name '{o.get('name')}' must be an identifier.")
+                check_expr(n, o.get("expr"), out_known, f"Output {o.get('name')}")
+                out_known = out_known | {o.get("name")}
+                if mode == "output" and o.get("name") == lf.get("decision_output"):
+                    out_known = out_known | {"leaf_decision"}
+                names_.append(o.get("name"))
+            if mode == "output" and lf.get("decision_output") not in names_:
+                add(n, "error", f"Decision output '{lf.get('decision_output') or ''}' is not an output of this leaf.")
             if lf.get("limit_expr"):
-                check_expr(n, lf["limit_expr"], known, "Limit")
-            for o in lf.get("outputs") or []:
-                check_expr(n, o.get("expr"), known, f"Output {o.get('name')}")
+                check_expr(n, lf["limit_expr"], out_known | {"leaf_decision"}, "Limit")
             if mode in ("decline", "refer") and not lf.get("reason_codes"):
                 add(n, "warning", "Declines and referrals usually carry a reason code.")
 
@@ -275,12 +315,14 @@ class Env(object):
     """Name lookup for formulas: calculations first, then dataset columns."""
 
     def __init__(self, df):
-        self.df, self.calcs = df, {}
+        self.df, self.calcs, self.ctx = df, {}, {}
 
     def __contains__(self, k):
-        return k in self.calcs or k in self.df.columns
+        return k in self.ctx or k in self.calcs or k in self.df.columns
 
     def __getitem__(self, k):
+        if k in self.ctx:
+            return self.ctx[k]
         return self.calcs[k] if k in self.calcs else self.df[k]
 
 
@@ -318,8 +360,9 @@ def route(split, env, index):
     return out
 
 
-def evaluate(df, tree, default_score=None):
-    """Route every row. Returns (result DataFrame, {node_id: mask}, env)."""
+def evaluate(df, tree, default_score=None, leaf_rates=None):
+    """Route every row. Returns (result DataFrame, {node_id: mask}, env).
+    ``leaf_rates``: {leaf_id: {pd, raw, n_known}} exposed to leaf formulas as leaf_event_rate..."""
     n, idx = len(df), df.index
     env = Env(df)
     leaf_id = np.empty(n, dtype=object)
@@ -353,21 +396,45 @@ def evaluate(df, tree, default_score=None):
         ii = np.where(mask)[0]
         lf = node.get("leaf") or {}
         mode = lf.get("mode", "cutoff")
+        rt = (leaf_rates or {}).get(node["id"]) or {}
+        const = lambda v: pd.Series(np.nan if v is None else v, index=idx, dtype=float)
+        ctx = env.ctx
+        ctx.clear()
+        ctx.update(leaf_id=pd.Series(node["id"], index=idx, dtype=object), leaf_event_rate=const(rt.get("pd")),
+                   leaf_event_rate_raw=const(rt.get("raw")), leaf_n_known=const(rt.get("n_known")))
         expr = lf.get("score_expr") or default_score
         if expr and len(ii):
             sc = pd.to_numeric(tx.evaluate(expr, env, idx), errors="coerce").values[ii]
             score[ii] = sc
         else:
             sc = np.full(len(ii), np.nan)
+        ctx["leaf_score"] = pd.Series(score, index=idx)
         if mode == "cutoff":
             aa, ra = _num(lf.get("approve_at")), _num(lf.get("refer_at"))
             with np.errstate(invalid="ignore"):
                 dec = np.where(sc >= (aa if aa is not None else np.inf), "APPROVE",
                                np.where(sc >= (ra if ra is not None else np.inf), "REFER", "DECLINE"))
             dec = np.where(np.isnan(sc), "REFER", dec)  # no score -> manual review
+        elif mode in ("none", "output"):
+            dec = np.full(len(ii), None, dtype=object)
         else:
             dec = np.full(len(ii), mode.upper())
         decision[ii] = dec
+        if mode != "output":
+            ctx["leaf_decision"] = pd.Series(decision, index=idx)
+        for o in leaf_outputs(tree, lf):
+            if not len(ii):
+                continue
+            val = tx.evaluate(o["expr"], env, idx)
+            val = val if isinstance(val, pd.Series) else pd.Series(val, index=idx)
+            arr = outputs.setdefault(o["name"], np.full(n, None, dtype=object))
+            arr[ii] = val.values[ii]
+            ctx[o["name"]] = val
+            if mode == "output" and o["name"] == lf.get("decision_output"):
+                decision[ii] = [_as_decision(v) for v in arr[ii]]
+                ctx["leaf_decision"] = pd.Series(decision, index=idx)
+        if mode == "output" and len(ii) and lf.get("decision_output") not in outputs:
+            decision[ii] = "REFER"
         leaf_id[ii] = node["id"]
         path[ii] = " > ".join(trail + [node.get("name") or node["id"]])
         reasons[ii] = ";".join(lf.get("reason_codes") or [])
@@ -376,12 +443,7 @@ def evaluate(df, tree, default_score=None):
             limit[ii] = pd.to_numeric(tx.evaluate(lf["limit_expr"], env, idx), errors="coerce").values[ii]
         else:
             limit[ii] = 1.0
-        for o in lf.get("outputs") or []:
-            if not len(ii):
-                continue
-            v = tx.evaluate(o["expr"], env, idx).values[ii]
-            arr = outputs.setdefault(o["name"], np.full(n, None, dtype=object))
-            arr[ii] = v
+        ctx.clear()
 
     go(tree, np.ones(n, dtype=bool), [])
     res = pd.DataFrame({"tree_leaf": leaf_id, "tree_path": path, "tree_score": score, "tree_decision": decision,
@@ -499,7 +561,8 @@ def summary(res, df, target=None, margin=None, loss=None):
     n = len(d)
     app = d == "APPROVE"
     out = dict(n=n, approval_rate=float(app.mean()) if n else None, refer_rate=float((d == "REFER").mean()) if n else None,
-               decline_rate=float((d == "DECLINE").mean()) if n else None, leaves=int(res["tree_leaf"].nunique()))
+               decline_rate=float((d == "DECLINE").mean()) if n else None, leaves=int(res["tree_leaf"].nunique()),
+               no_decision_rate=float(pd.isna(pd.Series(d)).mean()) if n else None)
     if y is not None:
         ka = app & ~np.isnan(y)
         bads = float(np.nansum(y[ka]))
@@ -609,22 +672,53 @@ def pd_state(tree):
     return "frozen" if pm.get("signature") == tree_signature(tree) else "stale"
 
 
-def predict(res, tree, masks=None, y=None, dataset=""):
-    """Add tree_proba_1 / tree_proba_0 / tree_prediction (+ raw, interval, n_known, source) to ``res``.
-    Frozen leaf event rates when the tree still matches; otherwise live in-sample rates from ``y``."""
+def rate_table(tree, masks=None, y=None, dataset=""):
+    """Leaf event rates in use: (table {leaf_id: stats}, state, source, threshold).
+    Frozen rates when the tree still matches; otherwise live in-sample rates from ``y``."""
     state = pd_state(tree)
     stg = pd_settings(tree)
     if state == "frozen":
         pm = tree["pd_model"]
-        table, thr = pm["leaves"], pm.get("threshold")
-        source = f"frozen:{pm.get('dataset', '')}@{pm.get('frozen_at', '')}"
-    elif y is not None and masks is not None:
+        return pm["leaves"], state, f"frozen:{pm.get('dataset', '')}@{pm.get('frozen_at', '')}", pm.get("threshold")
+    if y is not None and masks is not None:
         hold = holdout_mask(len(y), stg["holdout_pct"], stg["seed"])
         stats = node_pd(tree, masks, y, stg["credibility"], rows=~hold)
         table = {lf["id"]: stats[lf["id"]] for lf in leaves(tree) if lf["id"] in stats}
         thr = stg["threshold"] if stg["threshold"] not in (None, "") else stats.get(tree["id"], {}).get("raw")
-        source = f"live in-sample:{dataset}" + (" (stale freeze ignored)" if state == "stale" else "")
-    else:
+        return table, state, f"live in-sample:{dataset}" + (" (stale freeze ignored)" if state == "stale" else ""), thr
+    return {}, state, None, None
+
+
+def uses_leaf_rates(tree):
+    """True when a leaf formula reads leaf_event_rate / leaf_event_rate_raw / leaf_n_known."""
+    exprs = [o.get("expr") for o in tree.get("default_outputs") or []]
+    for lf in leaves(tree):
+        L = lf.get("leaf") or {}
+        exprs += [L.get("score_expr"), L.get("limit_expr")] + [o.get("expr") for o in L.get("outputs") or []]
+    for e in exprs:
+        try:
+            if e and set(tx.names(e)) & set(LEAF_RATE_NAMES):
+                return True
+        except tx.ExprError:
+            pass
+    return False
+
+
+def evaluate_full(df, tree, default_score=None, y=None, dataset=""):
+    """evaluate() with the leaf event rates available to leaf formulas (two passes only when needed:
+    routing does not depend on leaf formulas, so the second pass sees the same leaves)."""
+    res, masks, env = evaluate(df, tree, default_score)
+    if uses_leaf_rates(tree):
+        table = rate_table(tree, masks, y, dataset)[0]
+        res, masks, env = evaluate(df, tree, default_score, leaf_rates=table)
+    return res, masks, env
+
+
+def predict(res, tree, masks=None, y=None, dataset=""):
+    """Add tree_proba_1 / tree_proba_0 / tree_prediction (+ raw, interval, n_known, source) to ``res``.
+    Frozen leaf event rates when the tree still matches; otherwise live in-sample rates from ``y``."""
+    table, state, source, thr = rate_table(tree, masks, y, dataset)
+    if source is None:
         return res, dict(state=state, source=None, threshold=None)
     leaf = res["tree_leaf"]
     get = lambda k: leaf.map(lambda i: (table.get(i) or {}).get(k)).astype(float)
@@ -1225,8 +1319,25 @@ def _branch_sql(split, i, subst):
     return f"({v} IS NOT NULL AND ({cond}))"
 
 
-def to_sql(tree, meta, table="input_table"):
-    rows = []
+def _export_rates(tree, leaf_rates):
+    """Leaf rates for exported formulas: given ones, else the frozen ones (else none)."""
+    if leaf_rates is not None:
+        return leaf_rates
+    return tree["pd_model"]["leaves"] if pd_state(tree) == "frozen" else {}
+
+
+def _rates_note(tree, leaf_rates, rates_source, comment):
+    if not uses_leaf_rates(tree):
+        return ""
+    if leaf_rates is None and pd_state(tree) == "frozen":
+        rates_source = "frozen leaf event rates"
+    return (f"{comment} Leaf formulas use leaf_event_rate: embedded as constants from "
+            f"{rates_source or 'no leaf rates (NULL) – freeze the leaf rates first'}\n")
+
+
+def to_sql(tree, meta, table="input_table", leaf_rates=None, rates_source=None):
+    rates = _export_rates(tree, leaf_rates)
+    rows, out_names = [], []
     for lf in leaves(tree):
         path = next(p for n, _, p in walk(tree) if n is lf)
         subst, conds = {}, []
@@ -1237,41 +1348,71 @@ def to_sql(tree, meta, table="input_table"):
         for c in lf.get("calcs") or []:
             subst[c["name"]] = tx.to_sql(c["expr"], subst)
         L = lf["leaf"]
-        score = tx.to_sql(L.get("score_expr") or meta.get("score_col") or "NULL", subst) if (L.get("score_expr") or meta.get("score_col")) else "NULL"
-        if L.get("mode", "cutoff") == "cutoff":
+        mode = L.get("mode", "cutoff")
+        rt = rates.get(lf["id"]) or {}
+        lit = lambda v: "NULL" if v is None else repr(float(v))
+        subst.update(leaf_id=_sql_lit(lf["id"]), leaf_event_rate=lit(rt.get("pd")),
+                     leaf_event_rate_raw=lit(rt.get("raw")), leaf_n_known=lit(rt.get("n_known")))
+        expr = L.get("score_expr") or meta.get("score_col")
+        score = tx.to_sql(expr, subst) if expr else "NULL"
+        subst["leaf_score"] = score
+        if mode == "cutoff":
             ra = _num(L.get("refer_at"))
             dec = (f"CASE WHEN {score} IS NULL THEN 'REFER' WHEN {score} >= {_num(L.get('approve_at'))!r} THEN 'APPROVE'"
                    + (f" WHEN {score} >= {ra!r} THEN 'REFER'" if ra is not None else "") + " ELSE 'DECLINE' END")
+        elif mode in ("none", "output"):
+            dec = "NULL"
         else:
-            dec = f"'{L['mode'].upper()}'"
+            dec = f"'{mode.upper()}'"
+        if mode != "output":
+            subst["leaf_decision"] = dec
+        outs = {}
+        if mode == "output" and L.get("decision_output") not in [o["name"] for o in leaf_outputs(tree, L)]:
+            dec = "'REFER'"
+        for o in leaf_outputs(tree, L):
+            outs[o["name"]] = tx.to_sql(o["expr"], subst)
+            subst[o["name"]] = outs[o["name"]]
+            if o["name"] not in out_names:
+                out_names.append(o["name"])
+            if mode == "output" and o["name"] == L.get("decision_output"):
+                dec = f"COALESCE(UPPER(TRIM(CAST(({outs[o['name']]}) AS VARCHAR))), 'REFER')"
+                subst["leaf_decision"] = dec
         limit = tx.to_sql(L["limit_expr"], subst) if L.get("limit_expr") else "1.0"
-        rows.append((" AND ".join(conds) or "1=1", lf, score, dec, limit))
+        rows.append((" AND ".join(conds) or "1=1", lf, score, dec, limit, outs))
 
     def case(alias, pick):
-        return "  CASE\n" + "\n".join(f"    WHEN {c} THEN {pick(lf, s, d, l)}" for c, lf, s, d, l in rows) + f"\n  END AS {alias}"
+        return "  CASE\n" + "\n".join(f"    WHEN {r[0]} THEN {pick(*r[1:])}" for r in rows) + f"\n  END AS {alias}"
 
-    cols = [case("tree_leaf", lambda lf, s, d, l: f"'{lf['id']}'"),
-            case("tree_score", lambda lf, s, d, l: s),
-            case("tree_decision", lambda lf, s, d, l: d),
-            case("reason_codes", lambda lf, s, d, l: _sql_lit(";".join(lf["leaf"].get("reason_codes") or []))),
-            case("pricing_tier", lambda lf, s, d, l: _sql_lit(lf["leaf"].get("pricing_tier") or "")),
-            case("limit_multiplier", lambda lf, s, d, l: l)]
-    note = ""
+    cols = [case("tree_leaf", lambda lf, s, d, l, o: f"'{lf['id']}'"),
+            case("tree_score", lambda lf, s, d, l, o: s),
+            case("tree_decision", lambda lf, s, d, l, o: d),
+            case("reason_codes", lambda lf, s, d, l, o: _sql_lit(";".join(lf["leaf"].get("reason_codes") or []))),
+            case("pricing_tier", lambda lf, s, d, l, o: _sql_lit(lf["leaf"].get("pricing_tier") or "")),
+            case("limit_multiplier", lambda lf, s, d, l, o: l)]
+    for nm in out_names:
+        cols.append(case(_q("out_" + nm), lambda lf, s, d, l, o, nm=nm: o.get(nm, "NULL")))
+    note = _rates_note(tree, leaf_rates, rates_source, "--")
     if pd_state(tree) == "frozen":
         pm = tree["pd_model"]
         pdv = lambda lf: (pm["leaves"].get(lf["id"]) or {}).get("pd")
         thr = pm.get("threshold") if pm.get("threshold") is not None else 0.5
-        cols += [case("tree_proba_1", lambda lf, s, d, l: "NULL" if pdv(lf) is None else repr(float(pdv(lf)))),
-                 case("tree_prediction", lambda lf, s, d, l: "NULL" if pdv(lf) is None else str(int(pdv(lf) >= thr)))]
-        note = (f"-- Leaf event rates frozen on {pm.get('dataset')} at {pm.get('frozen_at')} "
-                f"({pm.get('n_known')} outcomes, credibility {pm.get('credibility')}, threshold {thr})\n")
+        cols += [case("tree_proba_1", lambda lf, s, d, l, o: "NULL" if pdv(lf) is None else repr(float(pdv(lf)))),
+                 case("tree_prediction", lambda lf, s, d, l, o: "NULL" if pdv(lf) is None else str(int(pdv(lf) >= thr)))]
+        note += (f"-- Leaf event rates frozen on {pm.get('dataset')} at {pm.get('frozen_at')} "
+                 f"({pm.get('n_known')} outcomes, credibility {pm.get('credibility')}, threshold {thr})\n")
     return (f"-- Strategy tree {meta.get('name')} v{meta.get('version', 1)} – Dataiku Strategy Tree Builder\n" + note +
             "SELECT\n  t.*,\n" + ",\n".join(cols) + f"\nFROM {table} t")
 
 
-def to_python(tree, meta):
+def to_python(tree, meta, leaf_rates=None, rates_source=None):
+    rates = _export_rates(tree, leaf_rates)
     lines = [f"# Strategy tree {meta.get('name')} v{meta.get('version', 1)} – Dataiku Strategy Tree Builder",
-             tx.PY_HELPERS, "", "def decide(row):", "    calc = {}"]
+             tx.PY_HELPERS, "",
+             "def _dec(v):\n    return 'REFER' if _m(v) else str(v).strip().upper()", "",
+             "def decide(row):", "    calc = {}"]
+    note = _rates_note(tree, leaf_rates, rates_source, "#")
+    if note:
+        lines[0] += "\n" + note.rstrip("\n")
     pm = tree["pd_model"] if pd_state(tree) == "frozen" else None
     thr = (pm.get("threshold") if pm and pm.get("threshold") is not None else 0.5)
     if pm:
@@ -1287,19 +1428,36 @@ def to_python(tree, meta):
         s = n.get("split")
         if not s:
             L = n["leaf"]
+            mode = L.get("mode", "cutoff")
+            rt = rates.get(n["id"]) or {}
+            lit = lambda v: "None" if v is None else repr(float(v))
+            subst.update(leaf_id=repr(n["id"]), leaf_event_rate=lit(rt.get("pd")),
+                         leaf_event_rate_raw=lit(rt.get("raw")), leaf_n_known=lit(rt.get("n_known")), leaf_score="score")
             expr = L.get("score_expr") or meta.get("score_col")
             lines.append(f"{p}score = {tx.to_python(expr, subst=subst) if expr else 'None'}  # {n.get('name') or n['id']}")
-            if L.get("mode", "cutoff") == "cutoff":
+            if mode == "cutoff":
                 ra = _num(L.get("refer_at"))
-                lines.append(f"{p}decision = 'REFER' if score is None else 'APPROVE' if score >= {_num(L.get('approve_at'))!r} else "
+                lines.append(f"{p}decision = 'REFER' if _m(score) else 'APPROVE' if score >= {_num(L.get('approve_at'))!r} else "
                              + (f"'REFER' if score >= {ra!r} else 'DECLINE'" if ra is not None else "'DECLINE'"))
+            elif mode in ("none", "output"):
+                lines.append(f"{p}decision = None")
             else:
-                lines.append(f"{p}decision = {L['mode'].upper()!r}")
+                lines.append(f"{p}decision = {mode.upper()!r}")
+            if mode != "output":
+                subst["leaf_decision"] = "decision"
+            lines.append(f"{p}out = {{}}")
+            for o in leaf_outputs(tree, L):
+                lines.append(f"{p}out[{o['name']!r}] = {tx.to_python(o['expr'], subst=subst)}")
+                subst[o["name"]] = f"out[{o['name']!r}]"
+                if mode == "output" and o["name"] == L.get("decision_output"):
+                    lines.append(f"{p}decision = _dec(out[{o['name']!r}])")
+                    subst["leaf_decision"] = "decision"
+            if mode == "output" and L.get("decision_output") not in [o["name"] for o in leaf_outputs(tree, L)]:
+                lines.append(f"{p}decision = 'REFER'")
             lim = tx.to_python(L["limit_expr"], subst=subst) if L.get("limit_expr") else "1.0"
-            outs = ", ".join(f"{o['name']!r}: {tx.to_python(o['expr'], subst=subst)}" for o in L.get("outputs") or [])
             lines.append(f"{p}return {{'node': {n['id']!r}, 'decision': decision, 'score': score, "
                          f"'reason_codes': {list(L.get('reason_codes') or [])!r}, 'pricing_tier': {L.get('pricing_tier') or ''!r}, "
-                         f"'limit_multiplier': {lim}, 'outputs': {{{outs}}}, 'calc': calc"
+                         f"'limit_multiplier': {lim}, 'outputs': out, 'calc': calc"
                          + ((lambda v: f", 'proba_1': {v!r}, 'prediction': {None if v is None else int(v >= thr)!r}")(
                              (pm["leaves"].get(n["id"]) or {}).get("pd")) if pm else "")
                          + "}")
@@ -1350,6 +1508,12 @@ def to_studio(tree, meta):
         if n.get("calcs"):
             issues.append(f"{n['id']}: node calculations are not supported by Strategy Studio.")
         mode = L.get("mode", "cutoff")
+        if mode in ("none", "output"):
+            what = "no decision (segment only)" if mode == "none" else f"decision from output '{L.get('decision_output')}'"
+            issues.append(f"{n['id']}: {what} becomes REFER (Strategy Studio needs a cut-off or fixed decision).")
+            mode = "refer"
+        if leaf_outputs(tree, L):
+            issues.append(f"{n['id']}: outputs ({', '.join(o['name'] for o in leaf_outputs(tree, L))}) are not carried to Strategy Studio.")
         se = L.get("score_expr") or ""
         if mode == "cutoff" and se and se != meta.get("score_col"):
             issues.append(f"{n['id']}: score formula '{se}' (Strategy Studio uses the score column with % / points adjustments).")

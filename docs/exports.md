@@ -38,7 +38,7 @@ Sidebar → Export & deploy → *Format* → **Download**.
 | Format | Content |
 | --- | --- |
 | Strategy tree JSON | `{"type": "dataiku_strategy_tree_v2", "version": 2, "meta", "tree", "checksum"}`: full fidelity, including calculations, formulas, prediction settings and frozen leaf rates. **Save** additionally stores the display settings. |
-| SQL CASE | One `CASE` per output column (`tree_leaf`, `tree_score`, `tree_decision`, `reason_codes`, `pricing_tier`, `limit_multiplier`). Calculations are inlined; missing comparisons are false. With frozen leaf rates, it also returns `tree_proba_1` and `tree_prediction`. |
+| SQL CASE | One `CASE` per output column: `tree_leaf`, `tree_score`, `tree_decision`, `reason_codes`, `pricing_tier`, `limit_multiplier`, and one `out_<name>` per leaf / default output.<br>Calculations and leaf values are inlined; missing comparisons are false.<br>`leaf_event_rate` is embedded as a constant per leaf; the header says whether the rates are frozen or live in-sample.<br>With frozen leaf rates, it also returns `tree_proba_1` and `tree_prediction`. |
 | Python function | `decide(row)` returns node, decision, score, reason codes, tier, limit, outputs and calcs; with frozen leaf rates, also `proba_1` and `prediction` |
 | Strategy Studio JSON | The converted binary tree with the list of conversion issues |
 
@@ -52,6 +52,8 @@ The SQL and Python exports reproduce the app's decisions, and the frozen event r
 | Category groups | Chain of `in` splits; unlisted categories go to the last group. An issue is listed if they followed another branch. |
 | Missing → branch *k* / own branch | `missing = yes` on the matching split / a leading `is_missing` split |
 | Leaf decision, cut-offs, reason codes, tier | Copied |
+| Decision *from an output* / *none (segment only)* | **Not representable**: the leaf becomes REFER (listed) |
+| Leaf and default outputs | **Not representable**: dropped (listed) |
 | Constant limit multiplier | Copied |
 | Node calculations, rule splits, score formulas, limit formulas | **Not representable.** Listed as issues; after confirmation, a simplified tree is written. A rule split is replaced by its *Otherwise* branch. |
 

@@ -73,7 +73,12 @@ Each edit refreshes the statistics, labels the split *manual override* and can b
 
 ## Logic tab
 
-Calculations, leaf decision (score cut-off or fixed decision), score formula, cut-offs, reason codes, pricing tier, credit-limit formula and extra outputs. The leaf box shows the predicted event rate. Full guide and worked example: [Logic tab and formula language](logic-and-formulas.md).
+Calculations, leaf decision, score formula, cut-offs, reason codes, pricing tier, credit-limit formula and **outputs**. The leaf decision can be a score cut-off, a fixed decision, taken *from an output*, or *none (segment only)*.
+- **Several outputs per leaf**, e.g. a credit decision, a risk grade, an APR, a maximum amount. Outputs can use `leaf_score`, `leaf_decision`, `leaf_event_rate` and earlier outputs.
+- **Default outputs** on the root apply to every leaf, e.g. pricing defined once.
+- The leaf box shows the predicted event rate.
+
+Full guide and worked examples: [Logic tab and formula language](logic-and-formulas.md).
 
 ## Metrics tab and *Node metrics…*
 

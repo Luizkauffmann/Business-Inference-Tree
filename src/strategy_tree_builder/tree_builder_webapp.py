@@ -98,7 +98,7 @@ def _is_date(col, name):
 def _evaluate(tree, display=None):
     s = need()
     c = s["cfg"]
-    res, masks, env = st.evaluate(s["df"], tree, c.get("score_col"))
+    res, masks, env = st.evaluate_full(s["df"], tree, c.get("score_col"), s["y"], c["dataset"])
     metrics = st.node_metrics(s["df"], tree, res, masks, env, c.get("target"), c.get("margin"), c.get("loss"),
                               (display or {}).get("custom_metrics"))
     res, info = st.predict(res, tree, masks, s["y"], c["dataset"])
@@ -549,10 +549,14 @@ def register(app):
             s = need()
             meta = dict(b.get("meta") or {}, score_col=s["cfg"].get("score_col"), dataset=s["cfg"]["dataset"])
             fmt = b.get("format", "json")
+            rates, src = None, None
+            if fmt in ("sql", "python") and st.uses_leaf_rates(b["tree"]) and st.pd_state(b["tree"]) != "frozen":
+                _, masks, _ = st.evaluate(s["df"], b["tree"], s["cfg"].get("score_col"))
+                rates, _, src, _ = st.rate_table(b["tree"], masks, s["y"], s["cfg"]["dataset"])
             if fmt == "sql":
-                body, ext = st.to_sql(b["tree"], meta), "sql"
+                body, ext = st.to_sql(b["tree"], meta, leaf_rates=rates, rates_source=src), "sql"
             elif fmt == "python":
-                body, ext = st.to_python(b["tree"], meta), "py"
+                body, ext = st.to_python(b["tree"], meta, leaf_rates=rates, rates_source=src), "py"
             elif fmt == "studio":
                 tree, issues = st.to_studio(b["tree"], meta)
                 body, ext = json.dumps(dict(meta=meta, tree=tree, conversion_issues=issues), indent=2), "json"
@@ -590,7 +594,7 @@ def register(app):
         try:
             with _lock:
                 s = need()
-                res, masks, _ = st.evaluate(s["df"], b["tree"], s["cfg"].get("score_col"))
+                res, masks, _ = st.evaluate_full(s["df"], b["tree"], s["cfg"].get("score_col"), s["y"], s["cfg"]["dataset"])
                 res, _ = st.predict(res, b["tree"], masks, s["y"], s["cfg"]["dataset"])
                 out = pd.concat([s["df"], res], axis=1)
                 import binning_output

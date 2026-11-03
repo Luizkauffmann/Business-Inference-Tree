@@ -5,7 +5,7 @@ Two Dataiku webapps for building **credit strategy trees**, the decision trees r
 | Webapp | What it is for |
 | --- | --- |
 | **Strategy Studio** | Hand-built binary strategy trees on a scored population (TRIAD-style).<br>Score adjustments, cut-off decisions, reason codes, pricing tiers and limit multipliers.<br>Live backtest, champion / challenger, exports to decisioning engines (InterConnect, PowerCurve, FICO, Oscilar, Pega, Provenir, Taktile, DMN) and a simulated deployment. |
-| **Strategy Tree Builder** (shown in Dataiku as *Business Inferencing Tree*) | An Angoss / Knowledge Studio-style strategy-tree builder.<br>Relevance-ranked attributes, **optimal multi-way splits** (optbinning) and Binning v2-style **manual bin overrides**.<br>Business logic in nodes: calculations, rule splits, formula leaves. Configurable node metrics and **Visual ML decision-tree import**.<br>Model-like **event-rate prediction** per row with calibration. Scales to 1,500+ attributes and can *Send to Studio*. |
+| **Strategy Tree Builder** (shown in Dataiku as *Business Inferencing Tree*) | An Angoss / Knowledge Studio-style strategy-tree builder.<br>Relevance-ranked attributes, **optimal multi-way splits** (optbinning) and Binning v2-style **manual bin overrides**.<br>Business logic in nodes: calculations, rule splits, formula leaves, **several outputs per leaf** (decision, pricing, segment) with root defaults. Configurable node metrics and **Visual ML decision-tree import**.<br>Model-like **event-rate prediction** per row with calibration. Scales to 1,500+ attributes and can *Send to Studio*. |
 
 ![Strategy Tree Builder](docs/images/tb_7_rules.png)
 

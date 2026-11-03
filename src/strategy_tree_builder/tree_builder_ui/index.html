@@ -10,8 +10,8 @@
       <label>Target (1 = event) <span class="hint">e.g. bad, repaid, fraud</span><select id="target"></select></label>
       <label>Score column <span class="hint">default leaf score</span><select id="scoreCol"></select></label>
       <div class="grid2">
-        <label>Margin / non-event ($)<input id="margin" type="number" value="350"></label>
-        <label>Loss / event ($)<input id="loss" type="number" value="4200"></label>
+        <label>Margin / non-event $<input id="margin" type="number" value="350"></label>
+        <label>Loss / event $<input id="loss" type="number" value="4200"></label>
       </div>
       <button id="btnLoad" class="primary w">Load population</button>
       <div id="popInfo" class="hint" style="margin-top:6px"></div>
@@ -135,9 +135,11 @@
         <h3 style="margin-top:14px">Leaf decision</h3>
         <div class="grid2">
           <label>Decision<select id="lfMode"><option value="cutoff">score cut-off</option><option value="approve">APPROVE</option>
-            <option value="refer">REFER</option><option value="decline">DECLINE</option></select></label>
+            <option value="refer">REFER</option><option value="decline">DECLINE</option>
+            <option value="output">from an output…</option><option value="none">none (segment only)</option></select></label>
           <label>Pricing tier<input id="lfTier" type="text"></label>
         </div>
+        <label id="lfDecOutWrap" hidden>Decision output <span class="hint">its value (APPROVE / REFER / DECLINE…) becomes tree_decision</span><select id="lfDecOut"></select></label>
         <label id="lfScoreWrap">Score formula<input id="lfScore" type="text" placeholder="policy_score_existing - 10 * inquiries_6m_count"></label>
         <div class="grid2" id="lfCutWrap">
           <label>Approve at ≥<input id="lfApprove" type="number"></label>
@@ -146,9 +148,20 @@
         <label>Reason codes <span class="hint">comma separated</span><input id="lfReasons" type="text"></label>
         <label>Credit-limit multiplier <span class="hint">number or formula</span><input id="lfLimit" type="text" placeholder="1.0"></label>
         <div id="lfPd" class="pd-box"></div>
-        <h3 style="margin-top:10px">Outputs <span class="hint">extra formulas written with the decision</span></h3>
+        <h3 style="margin-top:10px">Outputs <span class="hint">one column each (out_&lt;name&gt;), evaluated in order</span></h3>
+        <div class="hint out-help">Can use <code>leaf_score</code>, <code>leaf_decision</code>, <code>leaf_event_rate</code>,
+          <code>leaf_event_rate_raw</code>, <code>leaf_n_known</code>, <code>leaf_id</code> and earlier outputs,
+          e.g. <code>credit_decision</code> = <code>'APPROVE' if leaf_event_rate &lt; 0.05 else 'DECLINE'</code>.</div>
         <div id="outList"></div>
         <div class="row"><button id="btnAddOut">+ Output</button></div>
+        <div id="inheritedOuts" class="hint"></div>
+      </div>
+      <div id="defOutBox" hidden>
+        <h3 style="margin-top:14px">Default outputs <span class="hint">evaluated in every leaf after its own outputs; a leaf output with the same name overrides</span></h3>
+        <div class="hint out-help">e.g. pricing for all leaves: <code>apr</code> = <code>round(0.099 + 1.2 * leaf_event_rate, 4)</code>,
+          <code>max_amount</code> = <code>0 if leaf_decision == 'DECLINE' else stated_monthly_income * 3</code></div>
+        <div id="defOutList"></div>
+        <div class="row"><button id="btnAddDefOut">+ Default output</button></div>
       </div>
       <div class="row"><button id="btnApplyLogic" class="success">Apply logic</button></div>
       <details class="hint fn-help"><summary>Formula functions</summary><div id="fnHelp"></div></details>

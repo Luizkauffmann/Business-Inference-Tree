@@ -172,6 +172,7 @@
       ['Event rate approved', pct(s.bad_rate_approved, 2)], ['Profit', money(s.profit)], ['Leaves', num(s.leaves)]];
     var rootPd = S.tree && S.metrics[S.tree.id] ? S.metrics[S.tree.id].pd : null;
     if (rootPd != null) k.splice(4, 0, ['Avg predicted event rate', pct(rootPd, 2)]);
+    if (s.no_decision_rate) k.splice(3, 0, ['No decision (segment)', pct(s.no_decision_rate)]);
     $('#kpis').innerHTML = k.map(function (x) { return '<div class="kpi"><div class="v">' + x[1] + '</div><div class="l">' + x[0] + '</div></div>'; }).join('');
   }
   var guidance = debounce(async function () {
@@ -286,10 +287,12 @@
     if (n.split) return null;
     var lf = n.leaf || {}, m = lf.mode || 'cutoff';
     if (m === 'cutoff') return { t: '≥ ' + (lf.approve_at == null ? '?' : lf.approve_at) + (lf.refer_at != null ? ' / R ' + lf.refer_at : ''), c: '#1a6fc4' };
+    if (m === 'none') return { t: 'SEGMENT', c: '#6b7684' };
+    if (m === 'output') return { t: '= ' + (lf.decision_output || '?'), c: '#7b4bb7' };
     return { t: m.toUpperCase(), c: m === 'approve' ? '#1e8449' : m === 'refer' ? '#c27c0e' : '#c0392b' };
   }
   function drawCard(g, d, h, low) {
-    var n = d.data, mt = S.metrics[n.id] || {}, key = JSON.stringify([n.name, n.split && n.split.variable, n.leaf && [n.leaf.mode, n.leaf.approve_at, n.leaf.refer_at],
+    var n = d.data, mt = S.metrics[n.id] || {}, key = JSON.stringify([n.name, n.split && n.split.variable, n.leaf && [n.leaf.mode, n.leaf.approve_at, n.leaf.refer_at, n.leaf.decision_output],
       S.collapsed[n.id], low, mt.n, mt.bad_rate, metricRows().join(','), (n.calcs || []).length, n.children && n.children.length]);
     if (g.attr('data-k') === key) return;   // unchanged → no DOM work
     g.attr('data-k', key); g.selectAll('*').remove();
@@ -847,8 +850,10 @@
   function renderLogic(n) {
     $('#calcList').innerHTML = (n.calcs || []).map(function (c) { return calcRow(c, 'calc'); }).join('') ||
       '<div class="hint">No calculations. Example: <code>adj_score</code> = <code>policy_score_existing - 15 * inquiries_6m_count</code></div>';
-    var leaf = !n.split;
+    var leaf = !n.split, isRoot = S.tree && n.id === S.tree.id;
     $('#leafBox').hidden = !leaf;
+    $('#defOutBox').hidden = !isRoot;
+    if (isRoot) $('#defOutList').innerHTML = (S.tree.default_outputs || []).map(function (o) { return calcRow(o, 'dout'); }).join('');
     if (leaf) {
       var lf = n.leaf || {};
       $('#lfMode').value = lf.mode || 'cutoff'; $('#lfTier').value = lf.pricing_tier || '';
@@ -856,28 +861,46 @@
       $('#lfApprove').value = lf.approve_at == null ? '' : lf.approve_at; $('#lfRefer').value = lf.refer_at == null ? '' : lf.refer_at;
       $('#lfReasons').value = (lf.reason_codes || []).join(', '); $('#lfLimit').value = lf.limit_expr || '';
       $('#outList').innerHTML = (lf.outputs || []).map(function (o) { return calcRow(o, 'out'); }).join('');
+      var own = (lf.outputs || []).map(function (o) { return o.name; });
+      var inh = (S.tree.default_outputs || []).map(function (o) { return o.name; }).filter(function (x) { return own.indexOf(x) < 0; });
+      $('#inheritedOuts').innerHTML = inh.length ? 'Also from the root (default outputs): <code>' + inh.map(esc).join('</code>, <code>') + '</code>' : '';
+      S.lfDecOut = lf.decision_output || '';
+      $('#lfDecOut').innerHTML = '';
       renderLeafPd(n);
       leafVisibility();
     }
     bindRemovers();
   }
   function bindRemovers() { $$('.calc-row .rm').forEach(function (b) { b.onclick = function () { b.parentNode.remove(); }; }); }
-  function leafVisibility() { var c = $('#lfMode').value === 'cutoff'; $('#lfScoreWrap').hidden = !c; $('#lfCutWrap').hidden = !c; }
+  function leafVisibility() {
+    var m = $('#lfMode').value, c = m === 'cutoff';
+    $('#lfCutWrap').hidden = !c; $('#lfDecOutWrap').hidden = m !== 'output';
+    $('#lfScoreWrap').hidden = m === 'approve' || m === 'refer' || m === 'decline';
+    if (m === 'output') {
+      var names = readRows('out').map(function (o) { return o.name; });
+      (S.tree.default_outputs || []).forEach(function (o) { if (names.indexOf(o.name) < 0) names.push(o.name); });
+      var cur = $('#lfDecOut').value || S.lfDecOut || '';
+      $('#lfDecOut').innerHTML = names.length ? names.map(function (x) { return '<option' + (x === cur ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('')
+        : '<option value="">add an output first</option>';
+    }
+  }
   function readRows(cls) {
     return $$('#tab-logic .calc-row.' + cls).map(function (r) {
       return { name: r.querySelector('.cn').value.trim(), expr: r.querySelector('.ce').value.trim() };
     }).filter(function (c) { return c.name && c.expr; });
   }
   function applyLogic() {
-    var id = S.selected, calcs = readRows('calc'), outs = readRows('out');
+    var id = S.selected, calcs = readRows('calc'), outs = readRows('out'), douts = readRows('dout');
     commit(function () {
       var n = findNode(id);
       n.calcs = calcs;
+      if (n.id === S.tree.id) { if (douts.length) S.tree.default_outputs = douts; else delete S.tree.default_outputs; }
       if (!n.split) {
         var num_ = function (v) { return v === '' || v == null ? null : +v; };
         n.leaf = { mode: $('#lfMode').value, score_expr: $('#lfScore').value.trim(), approve_at: num_($('#lfApprove').value),
           refer_at: num_($('#lfRefer').value), reason_codes: $('#lfReasons').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean),
           pricing_tier: $('#lfTier').value.trim(), limit_expr: $('#lfLimit').value.trim(), outputs: outs };
+        if (n.leaf.mode === 'output') n.leaf.decision_output = $('#lfDecOut').value;
       }
     }, true);
     toast('Logic applied to ' + id + '.');
@@ -1004,6 +1027,8 @@
     $('#calcList').insertAdjacentHTML('beforeend', calcRow({}, 'calc')); bindRemovers();
   };
   $('#btnAddOut').onclick = function () { $('#outList').insertAdjacentHTML('beforeend', calcRow({}, 'out')); bindRemovers(); };
+  $('#btnAddDefOut').onclick = function () { $('#defOutList').insertAdjacentHTML('beforeend', calcRow({}, 'dout')); bindRemovers(); };
+  $('#outList').addEventListener('change', function () { if ($('#lfMode').value === 'output') leafVisibility(); });
   $('#lfMode').onchange = leafVisibility;
   $('#btnApplyLogic').onclick = applyLogic;
   $('#nodeName').addEventListener('change', function () {
