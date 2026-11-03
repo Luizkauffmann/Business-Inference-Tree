@@ -115,7 +115,7 @@ vantage_score >= 760 and debt_to_income_pct < 36
 
 `label_Segment` gives operations a stable segment code even if the rules change later.
 
-**Note:** Strategy Studio cannot represent rule splits. *Send to Studio* lists this and keeps only the *Otherwise* branch, so keep rule-based segmentations in the Tree Builder and use its SQL / Python export.
+**In Strategy Studio.** *Send to Studio* converts these three rules into a chain of yes / no splits (rule 1 ? DEROG : rule 2 ? THIN_FILE : rule 3 ? PRIME : NEAR_PRIME), so every segment and its `label_Segment` arrive; Studio routes 100 % of rows like the Tree Builder. Only the *Thin file* decision changes: a decision *from an output* is not representable and becomes REFER (listed before sending).
 
 ## Example 4 – Champion / challenger test cells
 

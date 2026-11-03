@@ -48,6 +48,17 @@ scored dataset ──► Strategy Tree Builder ──(Send to Studio)──► S
 - Both write a decisions dataset on the input's connection.
 - The Tree Builder can reuse the split definitions saved by a Binning v2 webapp in the folder `binning_configs` (optional).
 
+## Which app when: discover, then govern
+
+| | **Strategy Tree Builder** – *discover and design* | **Strategy Studio** – *decide and govern* |
+| --- | --- | --- |
+| Question it answers | *Where are the segments, and what should each one get?* | *Is this the rule set we run, and is it better than today's?* |
+| How rules are made | Data-driven: relevance ranking, optimal splits trained on the fly, bin overrides, formulas, leaf event-rate prediction | Human-readable yes / no rules on a score, written or reviewed by people |
+| Typical owner | Risk analyst / modeller | Strategy, policy and governance teams |
+| Strengths | Speed of discovery, multi-way splits, calculations, several outputs per leaf, calibration | Champion / challenger with swap sets, backtest against a baseline, versioning, decision-engine exports, simulated deploy |
+
+**Send to Studio is the hand-off.** Explore and design in the Tree Builder, then send the result to Studio, where it becomes a plain rule set that people can read, challenge, version and deploy. Numeric and category splits, simple rule splits, decisions, reason codes, tiers and **labels** all convert. What only the Tree Builder can compute (calculations, formulas, arithmetic rules, leaf outputs) is listed before sending, so either compute those values as dataset columns first, or score with the Tree Builder's own SQL / Python export.
+
 ## Quick start
 
 1. Create the code environment, copy `src/` into the project library and create the two standard webapps from `webapp_shells/` ([installation](docs/installation.md)).

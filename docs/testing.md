@@ -27,6 +27,7 @@ It uses `uv` by default. To use another interpreter, set `PY="python"` with the 
 | `labels_ui_test.py` (browser) | Labels box, label types dialog (add, rename), card badges (own vs inherited), decisions dataset, SQL export, *Send to Studio* |
 | `labels_examples.py` | Builds the four trees of the [labels article](labels.md); validation, identical SQL results and Strategy Studio labels |
 | `studio_conv.py` | *Send to Studio* conversion gives identical decisions under Strategy Studio's semantics (missing branches, other categories) |
+| `rule_conv_test.py` | Rule splits (`and` / `or` / `not`, `in`, `between`, `isnull`, chained comparisons) converted by *Send to Studio*: the Strategy Studio engine gives identical decisions, labels and reason codes, including missing values; arithmetic and calculation rules are reported |
 | `ui_test.py` (browser) | Load, relevance %, optimal split, debounced search, Binning v2 config, formulas, custom metrics, save, Send to Studio, write dataset, Visual ML import, 1,500-attribute virtualised list |
 | `bins_test.py` (browser) | Bin table, multi-select merge (adjacent rule), split bin, edit boundary (valid range), missing routing, undo, full table, editing an existing split while keeping sub-trees, categorical merge / move, rule merge |
 | `pd_ui_test.py` (browser) | KPI and status, leaf event-rate box and card metric, credibility 0, freeze with holdout, calibration, prediction columns in the written dataset, saved frozen rates, stale after editing a cut |

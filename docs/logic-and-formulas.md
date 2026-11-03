@@ -67,7 +67,7 @@ The SQL and Python exports of this tree reproduce 100 % of its decisions.
 
 **Tips**
 - A formula can only use calculations defined on the same node or above it. **Validate** reports unknown names.
-- Strategy Studio cannot represent calculations, rule splits or formulas. *Send to Studio* lists them and asks you to confirm a simplified version.
+- *Send to Studio* converts rule splits made of simple comparisons (`and` / `or` / `not`, `in`, `between`, `isnull`) into Strategy Studio yes / no splits. Calculations, formulas and rules with arithmetic cannot be represented: *Send to Studio* lists them, suggests computing them as dataset columns first, and asks you to confirm a simplified version.
 
 ## Multiple outputs per leaf: decision, pricing, segments
 

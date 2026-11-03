@@ -1747,16 +1747,158 @@ def to_generic(tree, meta):
     return body
 
 
+class _NotConvertible(Exception):
+    pass
+
+
+_ST_OPS = {"Lt": "<", "LtE": "<=", "Gt": ">", "GtE": ">=", "Eq": "==", "NotEq": "!="}
+_ST_FLIP = {"<": ">", "<=": ">=", ">": "<", ">=": "<=", "==": "==", "!=": "!="}
+
+
+def _rule_to_studio(expr, yes, no, calc_names, nid, use):
+    """Strategy Studio sub-tree sending the rows where ``expr`` is true to ``yes``, the others to ``no``.
+
+    Supports comparisons of a column with a constant, ``and`` / ``or`` / ``not``, ``in [...]``,
+    ``between()``, ``isnull()`` / ``notnull()`` and chained comparisons. A comparison with a missing
+    value is false (as in the Tree Builder), so every Studio split sends missing values to "no".
+    Raises _NotConvertible for arithmetic, calculations, functions or column-to-column comparisons.
+    """
+    import ast as _a
+
+    def var(n):
+        if isinstance(n, _a.Name) and n.id not in ("True", "False", "None"):
+            name = n.id
+        elif isinstance(n, _a.Call) and getattr(n.func, "id", None) == "col" and len(n.args) == 1 \
+                and isinstance(n.args[0], _a.Constant):
+            name = n.args[0].value
+        else:
+            return None
+        if name in calc_names:
+            raise _NotConvertible(f"it uses the calculation '{name}' – compute it as a dataset column first")
+        return name
+
+    def const(n):
+        if isinstance(n, _a.Constant) and isinstance(n.value, (int, float, str)) and not isinstance(n.value, bool):
+            return True, n.value
+        if isinstance(n, _a.UnaryOp) and isinstance(n.op, _a.USub) and isinstance(n.operand, _a.Constant) \
+                and isinstance(n.operand.value, (int, float)) and not isinstance(n.operand.value, bool):
+            return True, -n.operand.value
+        return False, None
+
+    def split(v, op, val, t, f, val2=None):
+        return {"id": nid(), "type": "split", "name": "", "variable": v, "op": op, "value": val, "value2": val2,
+                "missing": "no", "yes": use(t), "no": use(f)}
+
+    def atom(left, op_node, right, t, f):
+        op_name = type(op_node).__name__
+        if op_name in ("In", "NotIn"):
+            v = var(left)
+            if v is None or not isinstance(right, (_a.List, _a.Tuple)):
+                raise _NotConvertible("'in' needs a column on the left and a list of values")
+            vals = []
+            for e in right.elts:
+                ok, c = const(e)
+                if not ok:
+                    raise _NotConvertible("'in' lists must contain constants")
+                if "," in str(c):
+                    raise _NotConvertible("Strategy Studio lists cannot hold values that contain a comma")
+                vals.append(str(c))
+            return split(v, "in" if op_name == "In" else "not_in", ", ".join(vals), t, f)
+        if op_name not in _ST_OPS:
+            raise _NotConvertible(f"operator {op_name} is not supported")
+        op = _ST_OPS[op_name]
+        v, (ok, c) = var(left), const(right)
+        if v is None or not ok:
+            v, (ok, c) = var(right), const(left)
+            op = _ST_FLIP[op]
+        if v is None or not ok:
+            raise _NotConvertible("comparisons must be between a column and a constant (no arithmetic)")
+        if op in ("<", "<=", ">", ">=") and isinstance(c, str):
+            raise _NotConvertible(f"'{op}' needs a number")
+        return split(v, op, c, t, f)
+
+    def build(n, t, f):
+        if isinstance(n, _a.BoolOp):
+            vals = n.values
+            if isinstance(n.op, _a.And):        # a and b: a ? (b ? t : f) : f
+                node = build(vals[-1], t, f)
+                for v in reversed(vals[:-1]):
+                    node = build(v, node, f)
+                return node
+            node = build(vals[-1], t, f)        # a or b: a ? t : (b ? t : f)
+            for v in reversed(vals[:-1]):
+                node = build(v, t, node)
+            return node
+        if isinstance(n, _a.UnaryOp) and isinstance(n.op, _a.Not):
+            return build(n.operand, f, t)
+        if isinstance(n, _a.Constant) and isinstance(n.value, bool):
+            return use(t if n.value else f)
+        if isinstance(n, _a.Name) and n.id in ("True", "False"):
+            return use(t if n.id == "True" else f)
+        if isinstance(n, _a.Compare):
+            if len(n.ops) == 1:
+                return atom(n.left, n.ops[0], n.comparators[0], t, f)
+            parts, left = [], n.left            # 300 <= x < 600  ->  (300 <= x) and (x < 600)
+            for op_node, right in zip(n.ops, n.comparators):
+                parts.append((left, op_node, right))
+                left = right
+            node = atom(*parts[-1], t, f)
+            for pr in reversed(parts[:-1]):
+                node = atom(*pr, node, f)
+            return node
+        if isinstance(n, _a.Call) and getattr(n.func, "id", None) in ("isnull", "notnull", "between"):
+            fn, args = n.func.id, n.args
+            v = var(args[0]) if args else None
+            if v is None:
+                raise _NotConvertible(f"{fn}() needs a column")
+            if fn == "isnull":
+                return {"id": nid(), "type": "split", "name": "", "variable": v, "op": "is_missing", "value": None,
+                        "value2": None, "missing": "no", "yes": use(t), "no": use(f)}
+            if fn == "notnull":
+                return {"id": nid(), "type": "split", "name": "", "variable": v, "op": "is_missing", "value": None,
+                        "value2": None, "missing": "no", "yes": use(f), "no": use(t)}
+            (ok1, a), (ok2, b) = const(args[1]), const(args[2])
+            if not (ok1 and ok2) or isinstance(a, str) or isinstance(b, str):
+                raise _NotConvertible("between() needs numeric bounds")
+            return split(v, "between", a, t, f, b)
+        raise _NotConvertible("only comparisons of columns with constants, and / or / not, in, between, isnull and "
+                              "notnull can become Strategy Studio splits")
+
+    return build(tx.parse(expr), yes, no)
+
+
 def to_studio(tree, meta):
     """Convert to Strategy Studio's binary format (chained splits). Returns (tree, issues).
     Labels are resolved per leaf (inheritance applied) and carried as leaf["labels"]."""
     issues = []
     resolved = resolve_labels(tree)
+    calc_names = {c.get("name") for n, _, _ in walk(tree) for c in n.get("calcs") or []}
     ids = [0]
+    used = set()
 
     def nid():
         ids[0] += 1
         return f"s{ids[0]}"
+
+    def renumber(nd):
+        nd = copy.deepcopy(nd)
+
+        def go(x):
+            x["id"] = nid()
+            if x.get("type") == "split":
+                go(x["yes"]), go(x["no"])
+        go(nd)
+        return nd
+
+    def use(nd):
+        """A sub-tree can hang under one parent only: the first use takes it, later uses get a copy."""
+        if id(nd) in used:
+            return renumber(nd)
+        used.add(id(nd))
+        return nd
+
+    def size(nd):
+        return 1 + (size(nd["yes"]) + size(nd["no"]) if nd.get("type") == "split" else 0)
 
     def leaf(n):
         L = n["leaf"]
@@ -1788,8 +1930,25 @@ def to_studio(tree, meta):
             issues.append(f"{n['id']}: node calculations are not supported by Strategy Studio.")
         s, kids = n["split"], [conv(c) for c in n["children"]]
         if s["kind"] == "rule":
-            issues.append(f"{n['id']}: rule splits (formulas) are not supported by Strategy Studio.")
-            return kids[-1]
+            # first true rule wins: rule_0 ? kid_0 : (rule_1 ? kid_1 : ... otherwise)
+            snapshot = (ids[0], set(used))
+            try:
+                node = kids[-1]
+                for i in range(len(s["rules"]) - 1, -1, -1):
+                    node = _rule_to_studio(s["rules"][i], kids[i], node, calc_names, nid, use)
+                    node["name"] = (f"Rule {i + 1}: " + s["rules"][i])[:80]
+                if size(node) > 4000:
+                    raise _NotConvertible("the converted tree would be too large")
+                used.add(id(node))
+                return node
+            except (_NotConvertible, tx.ExprError) as e:
+                ids[0], _ = snapshot[0], used.clear()
+                used.update(snapshot[1])
+                issues.append(f"{n['id']}: rule split not converted ({e}); only its 'Otherwise' branch is kept.")
+                return kids[-1]
+        if s.get("variable") in calc_names:
+            issues.append(f"{n['id']}: split on the calculation '{s['variable']}' – compute it as a dataset column "
+                          f"first (Strategy Studio cannot evaluate calculations).")
         nb = n_branches(s)
         miss_to = nb - 1 if s.get("missing_separate") else int(s.get("missing_branch") or 0)
         if s["kind"] == "numeric":

@@ -1145,7 +1145,7 @@
     try {
       var r = await api('/api/send_to_studio', { meta: meta(), tree: S.tree, force: !!force });
       if (r.status === 'needs_confirmation') {
-        if (window.confirm('Strategy Studio cannot represent everything in this tree:\n\n• ' + r.issues.join('\n• ') +
+        if (window.confirm('Some parts of this tree cannot be sent to Strategy Studio (rules made of simple comparisons are converted automatically):\n\n• ' + r.issues.join('\n• ') +
           '\n\nSend a simplified version anyway?')) return sendStudio(true);
         return;
       }

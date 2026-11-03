@@ -55,6 +55,9 @@ The SQL and Python exports reproduce the app's decisions, and the frozen event r
 | Decision *from an output* / *none (segment only)* | **Not representable**: the leaf becomes REFER (listed) |
 | Leaf and default outputs | **Not representable**: dropped (listed) |
 | Constant limit multiplier | Copied |
-| Node calculations, rule splits, score formulas, limit formulas | **Not representable.** Listed as issues; after confirmation, a simplified tree is written. A rule split is replaced by its *Otherwise* branch. |
+| Rule split made of comparisons: column vs constant (`<`, `<=`, `>`, `>=`, `==`, `!=`), `and` / `or` / `not`, `in [...]` / `not in [...]`, `between()`, `isnull()` / `notnull()`, chained `600 <= x < 700` | **Converted** into a chain of yes / no splits that keeps *first true rule wins*: rule 1 ? branch 1 : (rule 2 ? branch 2 : … *Otherwise*). Missing values follow the Tree Builder rule (a comparison with a missing value is false). Decisions, labels, reason codes and tiers of every branch arrive. Tested: Strategy Studio routes 100 % of rows like the Tree Builder. |
+| Rule split with arithmetic, calculations, functions or column-vs-column comparisons (e.g. `vantage_score - 10 * dti > 300`) | **Not representable.** The issue names the node and the reason, and suggests computing the value as a dataset column first (Prepare recipe), then splitting on that column. After confirmation, the rule split is replaced by its *Otherwise* branch. |
+| Split on a node calculation | **Flagged**: compute it as a dataset column first. |
+| Node calculations, score formulas, limit formulas | **Not representable.** Listed as issues; after confirmation, a simplified tree is written. |
 
 The strategy is written to `decision_strategies/strategies/<NAME>.json` and opens in Strategy Studio's list. Leaf event rates are not carried over: Strategy Studio has no prediction columns.
